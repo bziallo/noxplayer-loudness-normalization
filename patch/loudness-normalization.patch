@@ -1256,18 +1256,35 @@ index ebaba7b..a12e8bb 100644
          settingKey='memoryEfficiency'
          callback={globalThis.location.reload}
 diff --git a/src/hooks/usePlayback.ts b/src/hooks/usePlayback.ts
-index f955321..98bad35 100644
+index f955321..2c9a59c 100644
 --- a/src/hooks/usePlayback.ts
 +++ b/src/hooks/usePlayback.ts
-@@ -9,6 +9,7 @@ import { Source } from '@APM/enums/MediaFetch';
+@@ -1,4 +1,4 @@
+-import { useRef } from 'react';
++import { useEffect, useRef } from 'react';
+ 
+ import { fetchPlayUrlPromise } from '@APM/utils/mediafetch/resolveURL';
+ import { useNoxSetting } from '@APM/stores/useApp';
+@@ -9,6 +9,18 @@ import { Source } from '@APM/enums/MediaFetch';
  import { DEFAULT_NULL_URL } from '@objects/Song';
  import { MUSICFREE } from '@utils/mediafetch/musicfree';
  import { NoxRepeatModeToRJKM } from '@utils/RJKMUtils';
 +import loudness from '@utils/audio/loudness/normalizeClient';
++import {
++  hostOf,
++  isHostHardDead,
++  isHostDead,
++  markHostDead,
++  pickLiveMirror,
++  probeUrl,
++  resetMirrors,
++  resolveMirrors,
++} from '@utils/mediafetch/biliAudioFailover';
++import { installImageHostFailover } from '@utils/mediafetch/imageHostFailover';
  import r128gain from '../utils/ffmpeg/r128util';
  import {
    checkBiliVideoPlayed,
-@@ -16,7 +17,10 @@ import {
+@@ -16,7 +28,10 @@ import {
  } from '../utils/Bilibili/BiliOperate';
  import { saveLastPlayDuration } from '../utils/ChromeStorage';
  
@@ -1279,7 +1296,7 @@ index f955321..98bad35 100644
  
  export default () => {
    const playerSetting = useNoxSetting((state) => state.playerSetting);
-@@ -53,7 +57,7 @@ export default () => {
+@@ -53,7 +68,7 @@ export default () => {
    ) => {
      if (
        !useNoxSetting.getState().playerSetting.r128gain ||
@@ -1288,21 +1305,14 @@ index f955321..98bad35 100644
      ) {
        return;
      }
-@@ -65,6 +69,70 @@ export default () => {
+@@ -65,6 +80,214 @@ export default () => {
      }, 500);
    };
  
-+  /**
-+   * Whole-track loudness normalization: measure the integrated loudness of the
-+   * track, then apply one fixed gain (no compression, dynamics untouched).
-+   *
-+   * The synchronous part runs before the player swaps `src`, so the gain of a
-+   * cached track is already in place when its first sample is audible.
-+   */
-+  const normalizeLoudness = (song: NoxMedia.Song, url: string) => {
-+    if (SkipLoudnessSource.includes(song.source)) return;
++  /** build the loudness options for one stream (used by play + failover) */
++  const loudnessOptions = (song: NoxMedia.Song, url: string) => {
 +    const playerSettingNow = useNoxSetting.getState().playerSetting;
-+    const options = {
++    return {
 +      song,
 +      url,
 +      getSource: () =>
@@ -1313,9 +1323,160 @@ index f955321..98bad35 100644
 +      playerSetting: playerSettingNow,
 +      mediaElement: useApp.getState().currentAudioInst,
 +    };
++  };
++
++  /**
++   * Whole-track loudness normalization: measure the integrated loudness of the
++   * track, then apply one fixed gain (no compression, dynamics untouched).
++   *
++   * The synchronous part runs before the player swaps `src`, so the gain of a
++   * cached track is already in place when its first sample is audible.
++   */
++  const normalizeLoudness = (song: NoxMedia.Song, url: string) => {
++    if (SkipLoudnessSource.includes(song.source)) return;
++    const options = loudnessOptions(song, url);
 +    loudness.resolveForPlayback(options);
 +    loudness.normalizeSong(options).catch(() => undefined);
 +  };
++
++  /** the track whose stream is currently loaded (mirror failover needs it) */
++  const currentSongRef = useRef<NoxMedia.Song | undefined>(undefined);
++  const failoverPending = useRef(false);
++
++  /**
++   * Resolve the URL we are actually going to play.
++   *
++   * Hosts that already blackholed us are remembered for ten minutes, so a track
++   * that resolves onto one of them can go straight to a working mirror (or give
++   * up immediately) instead of waiting for the browser's connect timeout.
++   */
++  const resolvePlayableUrl = async (song: NoxMedia.Song, url: string) => {
++    if (!isHostDead(url)) return url;
++    let failedHosts = new Set<string>([hostOf(url) ?? '']);
++    try {
++      const candidates = await resolveMirrors(song);
++      const live = await pickLiveMirror(candidates.filter((u) => u !== url));
++      if (live) {
++        console.warn(
++          `[failover] ${song.bvid}: ${hostOf(url)} 已知不通，直接改用 ${hostOf(live)}`,
++        );
++        return live;
++      }
++      // every candidate answered nothing: if more than one *host* is dead the
++      // browser cannot reach B站 CDNs at all right now, so skipping this track
++      // beats making the user wait for the element's own timeout
++      candidates.forEach((candidate) => {
++        const host = hostOf(candidate);
++        if (host && isHostDead(candidate)) failedHosts.add(host);
++      });
++    } catch (e) {
++      console.warn(`[failover] ${song.bvid}: 取镜像失败 ${e}`);
++    }
++    if (isHostHardDead(url) || failedHosts.size > 1) {
++      throw new Error(`no playable mirror for ${hostOf(url)}`);
++    }
++    // one host only, and it merely timed out: give the element its chance
++    // (the 6s stall watchdog takes over from here)
++    return url;
++  };
++
++  /**
++   * The stream host died (`ERR_CONNECTION_TIMED_OUT`, which surfaces as
++   * "[RJKM] format error") — or hung long enough to look dead. Ask playurl
++   * again and retry the *same* track on the next mirror instead of leaving the
++   * user staring at a track that never starts.
++   */
++  const failoverToMirror = async (songArg?: NoxMedia.Song) => {
++    const song = songArg ?? currentSongRef.current;
++    const el = useApp.getState().currentAudioInst;
++    if (!song?.bvid || !el || failoverPending.current) return;
++    failoverPending.current = true;
++    try {
++      const failedUrl = el.currentSrc || el.src || '';
++      // the element cannot tell a timeout from a hard failure, so remember it
++      // briefly and let the probes below decide
++      markHostDead(failedUrl, false);
++      const candidates = await resolveMirrors(song);
++      const mirror = await pickLiveMirror(
++        candidates.filter((url) => url !== failedUrl),
++      );
++      if (!mirror) {
++        console.warn(`[failover] ${song.bvid}: 没有能用的镜像，跳过这一首`);
++        el.playNext?.();
++        return;
++      }
++      console.warn(
++        `[failover] ${song.bvid}: 换到可用镜像 ${hostOf(mirror)} 继续播`,
++      );
++      loudness.resetPlaybackFailed(song.id);
++      el.src = mirror;
++      el.load();
++      await el.play().catch(() => undefined);
++      const options = loudnessOptions(song, mirror);
++      if (options.playerSetting.loudnessNormalize === true) {
++        loudness.resolveForPlayback(options);
++        loudness.normalizeSong(options).catch(() => undefined);
++      }
++    } catch (e) {
++      console.warn(`[failover] ${song.bvid}: 重试也失败了（${e}）`);
++      el.playNext?.();
++    } finally {
++      failoverPending.current = false;
++    }
++  };
++
++  // RJKM bails out early on network/format errors and never calls onAudioError,
++  // so watch the element ourselves: `error` = dead host, `stalled`/`waiting`
++  // = hung connection that would otherwise spin forever.
++  useEffect(() => {
++    // covers live on sharded hosts (i0/i1/i2.hdslb.com): if the one we were
++    // given is unreachable, fetch the same image from another shard
++    installImageHostFailover();
++    const el = useApp.getState().currentAudioInst;
++    if (!el) return undefined;
++    let stallTimer: ReturnType<typeof setTimeout> | undefined;
++    const clearStall = () => {
++      if (stallTimer) clearTimeout(stallTimer);
++      stallTimer = undefined;
++    };
++    const armStall = () => {
++      clearStall();
++      stallTimer = setTimeout(() => {
++        if (el.paused || el.readyState >= 3) return;
++        void (async () => {
++          const url = el.currentSrc || el.src;
++          console.warn('[failover] 音频 6 秒还没出声，先探一下这条线路');
++          if (!isHostDead(url) && (await probeUrl(url))) {
++            // alive, just slow: keep waiting instead of skipping a good track
++            console.warn('[failover] 这条线路其实通着（可能只是慢），继续等它');
++            armStall();
++            return;
++          }
++          void failoverToMirror();
++        })();
++      }, 6000);
++    };
++    const onError = () => void failoverToMirror();
++    el.addEventListener('error', onError);
++    el.addEventListener('loadstart', armStall);
++    el.addEventListener('stalled', armStall);
++    el.addEventListener('waiting', armStall);
++    el.addEventListener('playing', clearStall);
++    el.addEventListener('canplay', clearStall);
++    el.addEventListener('progress', clearStall);
++    el.addEventListener('timeupdate', clearStall);
++    return () => {
++      clearStall();
++      el.removeEventListener('error', onError);
++      el.removeEventListener('loadstart', armStall);
++      el.removeEventListener('stalled', armStall);
++      el.removeEventListener('waiting', armStall);
++      el.removeEventListener('playing', clearStall);
++      el.removeEventListener('canplay', clearStall);
++      el.removeEventListener('progress', clearStall);
++      el.removeEventListener('timeupdate', clearStall);
++    };
++  }, [currentAudioInst]);
 +
 +  /** measure the next track in the queue so switching stays seamless */
 +  const prefetchedSongs = useRef<Set<string>>(new Set());
@@ -1359,21 +1520,30 @@ index f955321..98bad35 100644
    const musicSrcParser = async (v: NoxMedia.Song) => {
      try {
        const resolvedUrl = await fetchPlayUrlPromise({
-@@ -74,7 +142,12 @@ export default () => {
+@@ -74,8 +297,20 @@ export default () => {
        if (resolvedUrl.url === DEFAULT_NULL_URL) {
          throw new Error('resolve failed');
        }
 -      parseR128Gain(v, async () => resolvedUrl);
+-      return resolvedUrl.url;
++      // a host that already blackholed us is swapped for a live mirror here, so
++      // the track never even starts on a dead one
++      const playableUrl = await resolvePlayableUrl(v, resolvedUrl.url);
++      // a new stream for a new track: fresh mirrors, fresh loudness state
++      currentSongRef.current = v;
++      resetMirrors(v.id);
++      loudness.resetPlaybackFailed(v.id);
 +      if (useNoxSetting.getState().playerSetting.loudnessNormalize === true) {
-+        normalizeLoudness(v, resolvedUrl.url);
++        normalizeLoudness(v, playableUrl);
 +      } else {
 +        // legacy replaygain path, kept for the pre-existing `r128gain` switch
 +        parseR128Gain(v, async () => resolvedUrl);
 +      }
-       return resolvedUrl.url;
++      return playableUrl;
      } catch (e) {
        console.error(`[resolveURL] failed to resolve ${v.bvid}: ${e}`);
-@@ -186,6 +259,8 @@ export default () => {
+       setTimeout(() => currentAudioInst?.playNext?.(), 1000);
+@@ -186,6 +421,8 @@ export default () => {
  
    const onAudioVolumeChange = (currentVolume: number) => {
      // console.log('[RJKM] audio volume change', currentVolume)
@@ -1382,7 +1552,7 @@ index f955321..98bad35 100644
      setPlayerSettings({ defaultVolume: Math.sqrt(currentVolume) });
    };
  
-@@ -242,6 +317,7 @@ export default () => {
+@@ -242,6 +479,7 @@ export default () => {
      setCurrentAudio(audioInfo);
      setCurrentPlayingId(audioInfo.id);
      sendBiliHeartbeat(audioInfo);
@@ -1390,6 +1560,26 @@ index f955321..98bad35 100644
    };
  
    const onAudioError = (
+@@ -250,12 +488,13 @@ export default () => {
+     _audioLists: NoxMedia.Song[],
+     audioInfo: NoxMedia.Song,
+   ) => {
+-    // HACK: does this get called?
+-    console.error('audio error', errMsg, audioInfo);
+-    setTimeout(() => {
+-      // console.debug('retrying...');
+-      currentAudioInst?.playByIndex?.(1);
+-    }, 3000);
++    console.error('[audio error]', errMsg, audioInfo);
++    // measuring a track whose stream is dead is pointless
++    if (currentSongRef.current?.id) {
++      loudness.markPlaybackFailed(currentSongRef.current.id);
++    }
++    // retry the same track on another CDN mirror before skipping it
++    void failoverToMirror();
+   };
+ 
+   const initPlayer = async (
 diff --git a/src/utils/audio/loudness/bs1770.ts b/src/utils/audio/loudness/bs1770.ts
 new file mode 100644
 index 0000000..350bc62
@@ -2302,10 +2492,10 @@ index 0000000..9bae80a
 +};
 diff --git a/src/utils/audio/loudness/normalizeClient.ts b/src/utils/audio/loudness/normalizeClient.ts
 new file mode 100644
-index 0000000..894dce7
+index 0000000..3a577a8
 --- /dev/null
 +++ b/src/utils/audio/loudness/normalizeClient.ts
-@@ -0,0 +1,441 @@
+@@ -0,0 +1,545 @@
 +/* ================================================================
 + * normalizeClient.ts — orchestration: cache -> measure -> plan -> apply.
 + *
@@ -2341,6 +2531,7 @@ index 0000000..894dce7
 +  GainPlan,
 +  LoudnessEngineKind,
 +  LoudnessEngineOption,
++  LoudnessFailureReason,
 +  LoudnessMeasurement,
 +  LoudnessStatus,
 +} from './types';
@@ -2445,6 +2636,79 @@ index 0000000..894dce7
 +  storeMeasurement(songId, measurement);
 +};
 +
++/** tracks whose playback already failed: measuring them is pointless */
++const failedSongs = new Set<string>();
++/** the track the <audio> element is currently on (for retry scoping) */
++let currentSongId = '';
++
++export const markPlaybackFailed = (songId: string) => {
++  failedSongs.add(songId);
++};
++
++export const resetPlaybackFailed = (songId: string) => {
++  failedSongs.delete(songId);
++};
++
++/** coded error without importing the sampler (which is loaded lazily) */
++const measurementError = (reason: LoudnessFailureReason, message: string) => {
++  const error = new Error(message) as Error & {
++    reason?: LoudnessFailureReason;
++  };
++  error.reason = reason;
++  return error;
++};
++
++const failureReasonOf = (error: unknown): LoudnessFailureReason => {
++  const reason = (error as { reason?: string } | undefined)?.reason;
++  return (
++    typeof reason === 'string' ? reason : 'unknown'
++  ) as LoudnessFailureReason;
++};
++
++/** what to tell the user when a measurement is abandoned */
++const FAILURE_TEXT: Record<LoudnessFailureReason, string> = {
++  timeout: '抽样请求超时（网络慢），保持原声',
++  network: '抽样请求失败（网络），保持原声',
++  'no-index': '这段音频没有分片索引，跳过归一',
++  decode: '抽样片段解码失败，保持原声',
++  'too-few-segments': '可用抽样片段太少，保持原声',
++  'playback-failed': '该曲目播放失败，跳过归一',
++  unknown: '测量失败，保持原声',
++};
++
++/**
++ * Sampling competes with the very stream it measures, so do not touch the CDN
++ * until the player is actually playing (or a grace period passed). This keeps
++ * a slow first byte from being made slower by our own requests.
++ */
++const waitForPlaybackStart = (
++  el: HTMLAudioElement | null | undefined,
++  url?: string,
++  timeoutMs = 12000,
++): Promise<void> => {
++  if (!el) return Promise.resolve();
++  // only "already started" when the stream we are about to measure is the one
++  // currently playing; otherwise the previous track is still on the element
++  const sameStream = !!url && (el.currentSrc === url || el.src === url);
++  if (sameStream && !el.paused && el.readyState >= 3) return Promise.resolve();
++  return new Promise((resolve) => {
++    let done = false;
++    const finish = () => {
++      if (done) return;
++      done = true;
++      clearTimeout(timer);
++      ['playing', 'canplay'].forEach((name) => {
++        el.removeEventListener(name, finish);
++      });
++      resolve();
++    };
++    const timer = setTimeout(finish, timeoutMs);
++    ['playing', 'canplay'].forEach((name) => {
++      el.addEventListener(name, finish);
++    });
++  });
++};
++
 +/* --------------------------------------------------------------- engine */
 +
 +const pickEngine = (
@@ -2509,6 +2773,10 @@ index 0000000..894dce7
 +  const running = inFlight.get(songId);
 +  if (running) return { measurement: await running, fromCache: true };
 +
++  if (failedSongs.has(songId)) {
++    throw measurementError('playback-failed', 'playback failed for this track');
++  }
++
 +  const task = (async () => {
 +    const stored = await getStoredMeasurement(songId);
 +    if (stored) {
@@ -2570,6 +2838,7 @@ index 0000000..894dce7
 +  const setting = resolveLoudnessSetting(opts.playerSetting);
 +  const songId = opts.song.id;
 +  const el = opts.mediaElement;
++  currentSongId = songId;
 +
 +  if (!setting.enabled) {
 +    loudnessEngine.setGainDb(0, { immediate: true });
@@ -2644,59 +2913,82 @@ index 0000000..894dce7
 +    });
 +  }
 +
-+  try {
-+    const { measurement, fromCache } = await getMeasurement(opts, setting, {
-+      onPartial: (partial) => {
-+        // progressive landing: land early, re-land only on a real change
-+        const partialPlan = planGain(partial, setting.profile);
-+        const current = loudnessEngine.getDesiredGainDb();
-+        if (Math.abs(partialPlan.gainDb - current) < REFINE_MIN_DELTA_DB)
-+          return;
-+        applyPlan(partialPlan, { force: true });
-+        emitStatus({
-+          songId,
-+          name: opts.song.name,
-+          stage: 'applied',
-+          engine: partial.engine,
-+          measuredLufs: partial.measuredLufs,
-+          truePeakDb: partial.truePeakDb ?? undefined,
-+          targetLufs: partialPlan.targetLufs,
-+          gainDb: partialPlan.gainDb,
-+          segments: partial.segments,
-+          reason: 'provisional (first batch)',
-+        });
-+      },
-+    });
++  const run = async (attempt: number): Promise<LoudnessStatus> => {
++    try {
++      // do not compete for bandwidth with a stream that has not started yet
++      await waitForPlaybackStart(opts.mediaElement, opts.url);
++      if (opts.mediaElement?.error) {
++        throw measurementError(
++          'playback-failed',
++          'audio element reported an error',
++        );
++      }
 +
-+    const plan = planGain(measurement, setting.profile);
-+    applyPlan(plan, { force: true });
-+    logger.info(
-+      `[loudness] ${opts.song.name || songId}: ${measurement.measuredLufs} LUFS ` +
-+        `-> target ${plan.targetLufs} LUFS, gain ${plan.gainDb}dB ` +
-+        `(${measurement.engine}${fromCache ? ', cache' : ''})`,
-+    );
-+    return emitStatus({
-+      songId,
-+      name: opts.song.name,
-+      stage: fromCache ? 'cache-hit' : 'applied',
-+      engine: measurement.engine,
-+      measuredLufs: measurement.measuredLufs,
-+      truePeakDb: measurement.truePeakDb ?? undefined,
-+      targetLufs: plan.targetLufs,
-+      gainDb: plan.gainDb,
-+      segments: measurement.segments,
-+      reason: plan.limitReason ?? undefined,
-+    });
-+  } catch (e) {
-+    logger.notice(`[loudness] measurement failed for ${songId}: ${e}`);
-+    return emitStatus({
-+      songId,
-+      name: opts.song.name,
-+      stage: 'failed',
-+      mode: loudnessEngine.getMode(),
-+      reason: String(e),
-+    });
-+  }
++      const { measurement, fromCache } = await getMeasurement(opts, setting, {
++        onPartial: (partial) => {
++          // progressive landing: land early, re-land only on a real change
++          const partialPlan = planGain(partial, setting.profile);
++          const current = loudnessEngine.getDesiredGainDb();
++          if (Math.abs(partialPlan.gainDb - current) < REFINE_MIN_DELTA_DB)
++            return;
++          applyPlan(partialPlan, { force: true });
++          emitStatus({
++            songId,
++            name: opts.song.name,
++            stage: 'applied',
++            engine: partial.engine,
++            measuredLufs: partial.measuredLufs,
++            truePeakDb: partial.truePeakDb ?? undefined,
++            targetLufs: partialPlan.targetLufs,
++            gainDb: partialPlan.gainDb,
++            segments: partial.segments,
++            reason: 'provisional (first batch)',
++          });
++        },
++      });
++
++      const plan = planGain(measurement, setting.profile);
++      applyPlan(plan, { force: true });
++      logger.info(
++        `[loudness] ${opts.song.name || songId}: ${measurement.measuredLufs} LUFS ` +
++          `-> target ${plan.targetLufs} LUFS, gain ${plan.gainDb}dB ` +
++          `(${measurement.engine}${fromCache ? ', cache' : ''})`,
++      );
++      return emitStatus({
++        songId,
++        name: opts.song.name,
++        stage: fromCache ? 'cache-hit' : 'applied',
++        engine: measurement.engine,
++        measuredLufs: measurement.measuredLufs,
++        truePeakDb: measurement.truePeakDb ?? undefined,
++        targetLufs: plan.targetLufs,
++        gainDb: plan.gainDb,
++        segments: measurement.segments,
++        reason: plan.limitReason ?? undefined,
++      });
++    } catch (e) {
++      const reason = failureReasonOf(e);
++      // say *why* we gave up, instead of dumping a raw AbortError
++      logger.notice(
++        `[loudness] ${FAILURE_TEXT[reason]}（${opts.song.name || songId}）`,
++      );
++      // CDN hiccups are usually transient: retry once while this track plays
++      if (reason !== 'playback-failed' && attempt === 0) {
++        setTimeout(() => {
++          if (currentSongId === songId) void run(1);
++        }, 20000);
++      }
++      return emitStatus({
++        songId,
++        name: opts.song.name,
++        stage: 'failed',
++        mode: loudnessEngine.getMode(),
++        reason: FAILURE_TEXT[reason],
++      });
++    }
++  };
++
++  return run(0);
 +};
 +
 +/** Measure the next track while the current one plays (keeps switches seamless). */
@@ -2732,6 +3024,8 @@ index 0000000..894dce7
 +  subscribeStatus,
 +  getLastStatus,
 +  isWritingVolume,
++  markPlaybackFailed,
++  resetPlaybackFailed,
 +  /** the Web Audio side: getGainValue(), getMode(), setBypass(), … */
 +  engine: loudnessEngine,
 +};
@@ -2749,10 +3043,10 @@ index 0000000..894dce7
 +export default api;
 diff --git a/src/utils/audio/loudness/sampler.ts b/src/utils/audio/loudness/sampler.ts
 new file mode 100644
-index 0000000..29546e6
+index 0000000..0a3bfef
 --- /dev/null
 +++ b/src/utils/audio/loudness/sampler.ts
-@@ -0,0 +1,386 @@
+@@ -0,0 +1,428 @@
 +/* ================================================================
 + * sampler.ts — Range sampling + fragment decoding.
 + *
@@ -2795,7 +3089,27 @@ index 0000000..29546e6
 +  startsWithBox,
 +  verifySidx,
 +} from './sidx';
-+import { LoudnessMeasurement, PcmChannels, SidxRef } from './types';
++import {
++  LoudnessFailureReason,
++  LoudnessMeasurement,
++  PcmChannels,
++  SidxRef,
++} from './types';
++
++/**
++ * Measurement failure with a machine readable reason, so the caller can say
++ * *why* it gave up (slow CDN vs. undecodable audio vs. a missing index)
++ * instead of dumping a raw AbortError at the user.
++ */
++export class LoudnessSampleError extends Error {
++  reason: LoudnessFailureReason;
++
++  constructor(reason: LoudnessFailureReason, message: string) {
++    super(message);
++    this.name = 'LoudnessSampleError';
++    this.reason = reason;
++  }
++}
 +
 +export interface SampleOptions {
 +  sampleSegments?: number;
@@ -2837,7 +3151,11 @@ index 0000000..29546e6
 +  let lastError: unknown = null;
 +  for (let attempt = 0; attempt < maxTries; attempt += 1) {
 +    const controller = new AbortController();
-+    const timer = setTimeout(() => controller.abort(), budget);
++    let timedOut = false;
++    const timer = setTimeout(() => {
++      timedOut = true;
++      controller.abort();
++    }, budget);
 +    const onOuterAbort = () => controller.abort();
 +    opts?.signal?.addEventListener('abort', onOuterAbort);
 +    try {
@@ -2859,6 +3177,12 @@ index 0000000..29546e6
 +    } catch (e) {
 +      lastError = e;
 +      if (opts?.signal?.aborted) throw e;
++      if (timedOut) {
++        lastError = new LoudnessSampleError(
++          'timeout',
++          `range ${rangeValue} timed out after ${budget}ms`,
++        );
++      }
 +      if (attempt + 1 < maxTries) {
 +        // eslint-disable-next-line no-await-in-loop
 +        await sleep(SEGMENT_RETRY_DELAY_MS);
@@ -2868,7 +3192,11 @@ index 0000000..29546e6
 +      opts?.signal?.removeEventListener('abort', onOuterAbort);
 +    }
 +  }
-+  throw lastError ?? new Error('fetchRange failed');
++  if (lastError instanceof LoudnessSampleError) throw lastError;
++  throw new LoudnessSampleError(
++    'network',
++    `range request failed: ${String(lastError)}`,
++  );
 +};
 +
 +export const fetchRange = async (
@@ -2967,7 +3295,9 @@ index 0000000..29546e6
 +  });
 +
 +  const header = findBox(head.bytes, 'sidx');
-+  if (!header) throw new Error('no sidx box in the head window');
++  if (!header) {
++    throw new LoudnessSampleError('no-index', 'no sidx box in the head window');
++  }
 +
 +  let buffer = head.bytes;
 +  const sidxEnd = header.offset + header.size;
@@ -2989,7 +3319,7 @@ index 0000000..29546e6
 +  const anchor = sidxEnd;
 +  const parsed = parseSidx(buffer, anchor);
 +  if (!parsed || !parsed.refs.length) {
-+    throw new Error('sidx parsed to zero references');
++    throw new LoudnessSampleError('no-index', 'sidx parsed to zero references');
 +  }
 +
 +  const check = verifySidx(parsed, head.totalBytes ?? undefined);
@@ -3113,8 +3443,9 @@ index 0000000..29546e6
 +  await Promise.all(pending.splice(0));
 +
 +  if (parts.length < MIN_SEGMENTS_TO_PROCEED) {
-+    throw new Error(
-+      `not enough segments decoded (${parts.length}/${MIN_SEGMENTS_TO_PROCEED})`,
++    throw new LoudnessSampleError(
++      'too-few-segments',
++      `only ${parts.length} of ${MIN_SEGMENTS_TO_PROCEED} needed segments decoded`,
 +    );
 +  }
 +
@@ -3124,7 +3455,12 @@ index 0000000..29546e6
 +  }
 +
 +  const final = await measureNow();
-+  if (!final) throw new Error('loudness measurement produced no gated blocks');
++  if (!final) {
++    throw new LoudnessSampleError(
++      'decode',
++      'loudness measurement produced no gated blocks',
++    );
++  }
 +  logger.debug(
 +    `[loudness] sampled ${final.segments} segments in ${final.elapsedMs}ms ` +
 +      `-> ${final.measuredLufs} LUFS / ${final.truePeakDb} dBTP`,
@@ -3389,10 +3725,10 @@ index 0000000..6a9bcaf
 +};
 diff --git a/src/utils/audio/loudness/types.ts b/src/utils/audio/loudness/types.ts
 new file mode 100644
-index 0000000..1fef4f3
+index 0000000..40eeb1c
 --- /dev/null
 +++ b/src/utils/audio/loudness/types.ts
-@@ -0,0 +1,117 @@
+@@ -0,0 +1,127 @@
 +/* ================================================================
 + * Loudness normalization: shared types.
 + *
@@ -3510,6 +3846,16 @@ index 0000000..1fef4f3
 +
 +/** How the gain is actually being applied right now. */
 +export type LoudnessApplicationMode = 'gain-node' | 'volume' | 'off';
++
++/** Why a measurement was abandoned (used for logs and the settings panel). */
++export type LoudnessFailureReason =
++  | 'timeout'
++  | 'network'
++  | 'no-index'
++  | 'decode'
++  | 'too-few-segments'
++  | 'playback-failed'
++  | 'unknown';
 diff --git a/src/utils/db/loudnessStorage.ts b/src/utils/db/loudnessStorage.ts
 new file mode 100644
 index 0000000..9e72d05
@@ -3751,3 +4097,268 @@ index f2217e1..5c261f4 100644
    await setR128Gain(song.id, val);
    return r128gain2Volume(val);
  };
+diff --git a/src/utils/mediafetch/biliAudioFailover.ts b/src/utils/mediafetch/biliAudioFailover.ts
+new file mode 100644
+index 0000000..f6bf861
+--- /dev/null
++++ b/src/utils/mediafetch/biliAudioFailover.ts
+@@ -0,0 +1,197 @@
++/* ================================================================
++ * biliAudioFailover.ts — retry a stalled B站 audio stream on another mirror.
++ *
++ * Every B站 audio stream comes with `baseUrl` plus one or two `backupUrl`
++ * mirrors on different CDNs, but the shared resolver only keeps `baseUrl`
++ * (@APM/utils/mediafetch/bilivideo). When that one host is unreachable —
++ * `ERR_CONNECTION_TIMED_OUT`, which shows up as
++ * "[RJKM] format error encountered; this could indicate network errors" —
++ * the track would otherwise never play.
++ *
++ * So: on an audio error we ask playurl once more and walk the mirrors.
++ * ================================================================ */
++import { wbiQuery } from '@APM/stores/wbi';
++import { logger } from '@utils/Logger';
++
++/** same endpoint the shared resolver uses */
++const PLAYURL =
++  'https://api.bilibili.com/x/player/wbi/playurl?cid={cid}&bvid={bvid}&qn=64&fnval=16&try_look=1&voice_balance=1';
++
++const mirrorCache = new Map<string, string[]>();
++
++/**
++ * Hosts that just failed, remembered so we stop asking them: a blackholed CDN
++ * answers nothing and every attempt costs a TCP timeout.
++ *
++ * A timeout is ambiguous (blackholed host vs. an overloaded but alive one), so
++ * it is only remembered briefly; a hard network error is remembered for long.
++ */
++const HARD_DEAD_TTL_MS = 10 * 60 * 1000;
++const SOFT_DEAD_TTL_MS = 60 * 1000;
++const deadHosts = new Map<string, { until: number; hard: boolean }>();
++
++export const hostOf = (url?: string): string | undefined => {
++  try {
++    return new URL(url ?? '').hostname;
++  } catch {
++    return undefined;
++  }
++};
++
++export const markHostDead = (url?: string, hard = true) => {
++  const host = hostOf(url);
++  if (!host) return;
++  const state = deadHosts.get(host);
++  const alreadyHard = !!state?.hard && state.until > Date.now();
++  const isHard = hard || alreadyHard;
++  deadHosts.set(host, {
++    until: Date.now() + (isHard ? HARD_DEAD_TTL_MS : SOFT_DEAD_TTL_MS),
++    hard: isHard,
++  });
++  if (!state || state.until <= Date.now()) {
++    logger.notice(
++      `[failover] ${host} ${
++        isHard ? '连不上' : '超时'
++      }，${isHard ? '10 分钟' : '60 秒'}内优先换别的镜像`,
++    );
++  }
++};
++
++export const isHostDead = (url?: string) => {
++  const host = hostOf(url);
++  if (!host) return false;
++  const state = deadHosts.get(host);
++  if (!state) return false;
++  if (state.until <= Date.now()) {
++    deadHosts.delete(host);
++    return false;
++  }
++  return true;
++};
++
++/** true only when the host failed for good (not merely a timeout) */
++export const isHostHardDead = (url?: string) => {
++  const host = hostOf(url);
++  const state = host ? deadHosts.get(host) : undefined;
++  if (!state || state.until <= Date.now()) return false;
++  return state.hard;
++};
++
++export const clearHostState = (url?: string) => {
++  const host = hostOf(url);
++  if (host) deadHosts.delete(host);
++};
++
++/**
++ * Cheap reachability probe (2 KiB range request) so we never wait for the
++ * media element's own ~30s connect timeout. A successful probe may still be a
++ * slow host, so the caller keeps playing when it answers.
++ */
++export const probeUrl = async (
++  url: string,
++  timeoutMs = 2500,
++): Promise<boolean> => {
++  const controller = new AbortController();
++  const timer = setTimeout(() => controller.abort(), timeoutMs);
++  try {
++    const res = await fetch(url, {
++      headers: { Range: 'bytes=0-2047' },
++      signal: controller.signal,
++    });
++    const ok = res.status === 206 || res.ok;
++    if (ok) clearHostState(url);
++    else markHostDead(url, true);
++    return ok;
++  } catch (e) {
++    // an abort means "too slow", anything else means "cannot connect"
++    const timedOut = (e as Error)?.name === 'AbortError';
++    logger.debug(`[failover] probe failed for ${hostOf(url)}: ${e}`);
++    markHostDead(url, !timedOut);
++    return false;
++  } finally {
++    clearTimeout(timer);
++  }
++};
++
++/**
++ * First candidate that actually answers — resolves as soon as one does, so a
++ * dead mirror never delays a live one. Hosts known to be dead are skipped.
++ */
++export const pickLiveMirror = async (
++  candidates: string[],
++): Promise<string | undefined> => {
++  const usable = candidates.filter((url) => !isHostDead(url));
++  if (!usable.length) return undefined;
++  return new Promise((resolve) => {
++    let settled = 0;
++    let done = false;
++    usable.forEach((url) => {
++      probeUrl(url)
++        .then((ok) => {
++          if (ok && !done) {
++            done = true;
++            resolve(url);
++          }
++        })
++        .finally(() => {
++          settled += 1;
++          if (settled === usable.length && !done) {
++            done = true;
++            resolve(undefined);
++          }
++        });
++    });
++  });
++};
++
++const bestByBandwidth = (list?: { bandwidth?: number }[]) =>
++  (list ?? [])
++    .slice()
++    .sort((a, b) => (b.bandwidth ?? 0) - (a.bandwidth ?? 0))[0];
++
++const pickAudio = (data: any) =>
++  bestByBandwidth(data?.dash?.flac?.audio) ??
++  bestByBandwidth(data?.dash?.dolby?.audio) ??
++  bestByBandwidth(data?.dash?.audio);
++
++/** Resolve (and cache) every playable URL for a B站 track, best first. */
++export const resolveMirrors = async (
++  song: NoxMedia.Song,
++): Promise<string[]> => {
++  const cached = mirrorCache.get(song.id);
++  if (cached) return cached;
++  // only B站 video tracks carry a bvid/playurl
++  if (!song.bvid || !song.bvid.startsWith('BV')) return [];
++
++  const res = await wbiQuery(
++    PLAYURL.replace('{bvid}', song.bvid).replace('{cid}', String(song.id)),
++    { method: 'GET', headers: {}, credentials: 'omit' },
++  );
++  const json = await res.json();
++  const audio = pickAudio(json?.data) as
++    { baseUrl?: string; backupUrl?: string[] } | undefined;
++  const urls = [audio?.baseUrl, ...(audio?.backupUrl ?? [])].filter(
++    (url): url is string => typeof url === 'string' && url.length > 0,
++  );
++  const unique = Array.from(new Set(urls));
++  mirrorCache.set(song.id, unique);
++  logger.debug(`[failover] ${song.bvid}: ${unique.length} 个可用地址`);
++  return unique;
++};
++
++/** Forget cached mirrors/attempts, e.g. when the track is played again. */
++export const resetMirrors = (songId: string) => {
++  mirrorCache.delete(songId);
++};
++
++export default {
++  resolveMirrors,
++  resetMirrors,
++  probeUrl,
++  pickLiveMirror,
++  markHostDead,
++  isHostHardDead,
++  clearHostState,
++  isHostDead,
++  hostOf,
++};
+diff --git a/src/utils/mediafetch/imageHostFailover.ts b/src/utils/mediafetch/imageHostFailover.ts
+new file mode 100644
+index 0000000..f616ba1
+--- /dev/null
++++ b/src/utils/mediafetch/imageHostFailover.ts
+@@ -0,0 +1,56 @@
++/* ================================================================
++ * imageHostFailover.ts — retry a cover on another B站 image shard.
++ *
++ * i0/i1/i2.hdslb.com are replicas of the same object store (verified: the same
++ * /bfs/archive/*.jpg comes back byte-identical from all three), but a single
++ * shard can be unreachable from a given network. The result is a missing cover
++ * plus a console full of ERR_CONNECTION_TIMED_OUT, while playback itself is
++ * perfectly fine.
++ *
++ * Image `error` events do not bubble, so the listener is registered in the
++ * capture phase; it covers every cover in the app (player, playlist, lyrics).
++ * ================================================================ */
++const SHARDS = ['i0.hdslb.com', 'i1.hdslb.com', 'i2.hdslb.com'];
++/** extra attempts per <img> before we let it stay broken */
++const MAX_EXTRA_TRIES = 2;
++
++const triedShards = new WeakMap<HTMLImageElement, Set<string>>();
++let installed = false;
++
++const retryOnAnotherShard = (img: HTMLImageElement) => {
++  const current = img.currentSrc || img.src;
++  let url: URL;
++  try {
++    url = new URL(current);
++  } catch {
++    return;
++  }
++  if (!SHARDS.includes(url.hostname)) return;
++
++  const history = triedShards.get(img) ?? new Set<string>();
++  triedShards.set(img, history);
++  history.add(url.hostname);
++  if (history.size > MAX_EXTRA_TRIES) return;
++
++  const next = SHARDS.find((host) => !history.has(host));
++  if (!next) return;
++  url.hostname = next;
++  console.info(`[cover] ${url.hostname} 不通，换镜像分片重试`);
++  img.src = url.toString();
++};
++
++/** Idempotent: safe to call from any effect. */
++export const installImageHostFailover = () => {
++  if (installed) return;
++  installed = true;
++  document.addEventListener(
++    'error',
++    (event) => {
++      const target = event.target;
++      if (target instanceof HTMLImageElement) retryOnAnotherShard(target);
++    },
++    true,
++  );
++};
++
++export default { installImageHostFailover };
