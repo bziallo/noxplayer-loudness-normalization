@@ -1,0 +1,3753 @@
+diff --git a/README.md b/README.md
+index b990b26..f0617eb 100644
+--- a/README.md
++++ b/README.md
+@@ -40,3 +40,22 @@ Virtuareal link所属虚拟艺人[诺莺Nox](https://space.bilibili.com/529249/c
+ - 歌单云备份、与手机版电梓播放器伪互通
+ - b站登录互动，点赞，三连，增加b站视频播放量
+ - ffmpeg处理音量均衡
++- 响度归一：整段测量集成响度后，对每个视频施加一个固定增益（不做实时压缩）
++
++## 响度归一（整段测量 + 固定增益）
++
++B站不会把响度元数据交给第三方播放器，所以这里改成**本地测量**：
++
++- **测量**：解析音频的 fMP4 `sidx` 索引，全片均匀抽 12 段（≈60 秒音频、≈0.5MB，不到长视频的 1%），
++  逐段解码后按 ITU-R BS.1770-4 算集成响度与真峰值；
++- **落位**：`<audio>` → `MediaElementAudioSourceNode` → `GainNode`，每个视频只设置**一个常数增益**
++  （`目标响度 − 实测响度`，受「真峰值 ≤ −1 dBTP」与档案上下限约束），切换时 120ms 斜坡；
++  **不做压缩、不做限幅**，素材本身的动态范围原样保留；
++- **缓存**：测量结果按 cid 存在 IndexedDB 里，改目标响度/换档案不需要重测；
++- **退化**：直播不处理；抽样不可用时可以改用 ffmpeg 全片测量，或干脆保持原声。
++
++入口：设置 → 播放器设置 → 响度归一（可选标准/高动态/耳机/外放/深夜等档案，并可用滑条自定义
++目标响度、最大提升与最大衰减）。`Shift+B` 可以旁路，用来做 A/B 对比。
++
++算法移植自 [Bilibili_LoudNorm](https://github.com/ADMA200/Bilibili_LoudNorm)（MIT，(c) 2026 Moxia9527），
++`src/utils/audio/loudness/` 每个文件头部都留有出处与许可说明。
+diff --git a/drizzle/0007_loud_loudness_table.sql b/drizzle/0007_loud_loudness_table.sql
+new file mode 100644
+index 0000000..17e7cb0
+--- /dev/null
++++ b/drizzle/0007_loud_loudness_table.sql
+@@ -0,0 +1,11 @@
++CREATE TABLE "loudness-table" (
++	"id" integer PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name "loudness-table_id_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 2147483647 START WITH 1 CACHE 1),
++	"songcid" varchar(255) NOT NULL,
++	"measuredLufs" real,
++	"truePeakDb" real,
++	"engine" varchar(16),
++	"engineVersion" integer,
++	"segments" integer,
++	"updatedAt" real,
++	CONSTRAINT "loudness-table_songcid_unique" UNIQUE("songcid")
++);
+diff --git a/drizzle/meta/0007_snapshot.json b/drizzle/meta/0007_snapshot.json
+new file mode 100644
+index 0000000..8df6963
+--- /dev/null
++++ b/drizzle/meta/0007_snapshot.json
+@@ -0,0 +1,459 @@
++{
++  "id": "db022024-97b6-4afe-a1e1-921176a62153",
++  "prevId": "e47e3233-2699-4c40-a60f-5024741afb32",
++  "version": "7",
++  "dialect": "postgresql",
++  "tables": {
++    "public.abrepeat-table": {
++      "name": "abrepeat-table",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "integer",
++          "primaryKey": true,
++          "notNull": true,
++          "identity": {
++            "type": "always",
++            "name": "abrepeat-table_id_seq",
++            "schema": "public",
++            "increment": "1",
++            "startWith": "1",
++            "minValue": "1",
++            "maxValue": "2147483647",
++            "cache": "1",
++            "cycle": false
++          }
++        },
++        "songcid": {
++          "name": "songcid",
++          "type": "varchar(255)",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "a": {
++          "name": "a",
++          "type": "real",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "b": {
++          "name": "b",
++          "type": "real",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "aAbs": {
++          "name": "aAbs",
++          "type": "real",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "bAbs": {
++          "name": "bAbs",
++          "type": "real",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "resumePlayback": {
++          "name": "resumePlayback",
++          "type": "real",
++          "primaryKey": false,
++          "notNull": false
++        }
++      },
++      "indexes": {},
++      "foreignKeys": {},
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {
++        "abrepeat-table_songcid_unique": {
++          "name": "abrepeat-table_songcid_unique",
++          "nullsNotDistinct": false,
++          "columns": [
++            "songcid"
++          ]
++        }
++      },
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.lyric-table": {
++      "name": "lyric-table",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "integer",
++          "primaryKey": true,
++          "notNull": true,
++          "identity": {
++            "type": "always",
++            "name": "lyric-table_id_seq",
++            "schema": "public",
++            "increment": "1",
++            "startWith": "1",
++            "minValue": "1",
++            "maxValue": "2147483647",
++            "cache": "1",
++            "cycle": false
++          }
++        },
++        "songId": {
++          "name": "songId",
++          "type": "varchar(255)",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "lyricKey": {
++          "name": "lyricKey",
++          "type": "varchar(255)",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "lyricOffset": {
++          "name": "lyricOffset",
++          "type": "real",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "lyric": {
++          "name": "lyric",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "source": {
++          "name": "source",
++          "type": "varchar(255)",
++          "primaryKey": false,
++          "notNull": false
++        }
++      },
++      "indexes": {},
++      "foreignKeys": {},
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {
++        "lyric-table_songId_unique": {
++          "name": "lyric-table_songId_unique",
++          "nullsNotDistinct": false,
++          "columns": [
++            "songId"
++          ]
++        }
++      },
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.playback-count": {
++      "name": "playback-count",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "integer",
++          "primaryKey": true,
++          "notNull": true,
++          "identity": {
++            "type": "always",
++            "name": "playback-count_id_seq",
++            "schema": "public",
++            "increment": "1",
++            "startWith": "1",
++            "minValue": "1",
++            "maxValue": "2147483647",
++            "cache": "1",
++            "cycle": false
++          }
++        },
++        "songcid": {
++          "name": "songcid",
++          "type": "varchar(255)",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "count": {
++          "name": "count",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "lastPlayed": {
++          "name": "lastPlayed",
++          "type": "bigint",
++          "primaryKey": false,
++          "notNull": false
++        }
++      },
++      "indexes": {},
++      "foreignKeys": {},
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.r128gain-table": {
++      "name": "r128gain-table",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "integer",
++          "primaryKey": true,
++          "notNull": true,
++          "identity": {
++            "type": "always",
++            "name": "r128gain-table_id_seq",
++            "schema": "public",
++            "increment": "1",
++            "startWith": "1",
++            "minValue": "1",
++            "maxValue": "2147483647",
++            "cache": "1",
++            "cycle": false
++          }
++        },
++        "songcid": {
++          "name": "songcid",
++          "type": "varchar(255)",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "r128gain": {
++          "name": "r128gain",
++          "type": "real",
++          "primaryKey": false,
++          "notNull": false
++        }
++      },
++      "indexes": {},
++      "foreignKeys": {},
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {
++        "r128gain-table_songcid_unique": {
++          "name": "r128gain-table_songcid_unique",
++          "nullsNotDistinct": false,
++          "columns": [
++            "songcid"
++          ]
++        }
++      },
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.song-beat-table": {
++      "name": "song-beat-table",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "integer",
++          "primaryKey": true,
++          "notNull": true,
++          "identity": {
++            "type": "always",
++            "name": "song-beat-table_id_seq",
++            "schema": "public",
++            "increment": "1",
++            "startWith": "1",
++            "minValue": "1",
++            "maxValue": "2147483647",
++            "cache": "1",
++            "cycle": false
++          }
++        },
++        "songcid": {
++          "name": "songcid",
++          "type": "varchar(255)",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "beat": {
++          "name": "beat",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        }
++      },
++      "indexes": {},
++      "foreignKeys": {},
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.song-download-table": {
++      "name": "song-download-table",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "integer",
++          "primaryKey": true,
++          "notNull": true,
++          "identity": {
++            "type": "always",
++            "name": "song-download-table_id_seq",
++            "schema": "public",
++            "increment": "1",
++            "startWith": "1",
++            "minValue": "1",
++            "maxValue": "2147483647",
++            "cache": "1",
++            "cycle": false
++          }
++        },
++        "songcid": {
++          "name": "songcid",
++          "type": "varchar(255)",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "downloadPath": {
++          "name": "downloadPath",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        }
++      },
++      "indexes": {},
++      "foreignKeys": {},
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.temp-table": {
++      "name": "temp-table",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "integer",
++          "primaryKey": true,
++          "notNull": true,
++          "identity": {
++            "type": "always",
++            "name": "temp-table_id_seq",
++            "schema": "public",
++            "increment": "1",
++            "startWith": "1",
++            "minValue": "1",
++            "maxValue": "2147483647",
++            "cache": "1",
++            "cycle": false
++          }
++        },
++        "songcid": {
++          "name": "songcid",
++          "type": "varchar(255)",
++          "primaryKey": false,
++          "notNull": true
++        }
++      },
++      "indexes": {},
++      "foreignKeys": {},
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.loudness-table": {
++      "name": "loudness-table",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "integer",
++          "primaryKey": true,
++          "notNull": true,
++          "identity": {
++            "type": "always",
++            "name": "loudness-table_id_seq",
++            "schema": "public",
++            "increment": "1",
++            "startWith": "1",
++            "minValue": "1",
++            "maxValue": "2147483647",
++            "cache": "1",
++            "cycle": false
++          }
++        },
++        "songcid": {
++          "name": "songcid",
++          "type": "varchar(255)",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "measuredLufs": {
++          "name": "measuredLufs",
++          "type": "real",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "truePeakDb": {
++          "name": "truePeakDb",
++          "type": "real",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "engine": {
++          "name": "engine",
++          "type": "varchar(16)",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "engineVersion": {
++          "name": "engineVersion",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "segments": {
++          "name": "segments",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "updatedAt": {
++          "name": "updatedAt",
++          "type": "real",
++          "primaryKey": false,
++          "notNull": false
++        }
++      },
++      "indexes": {},
++      "foreignKeys": {},
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {
++        "loudness-table_songcid_unique": {
++          "name": "loudness-table_songcid_unique",
++          "nullsNotDistinct": false,
++          "columns": [
++            "songcid"
++          ]
++        }
++      },
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    }
++  },
++  "enums": {},
++  "schemas": {},
++  "sequences": {},
++  "roles": {},
++  "policies": {},
++  "views": {},
++  "_meta": {
++    "columns": {},
++    "schemas": {},
++    "tables": {}
++  }
++}
+\ No newline at end of file
+diff --git a/drizzle/meta/_journal.json b/drizzle/meta/_journal.json
+index 9c03fe2..6650b12 100644
+--- a/drizzle/meta/_journal.json
++++ b/drizzle/meta/_journal.json
+@@ -50,6 +50,13 @@
+       "when": 1789529290164,
+       "tag": "0006_eager_rick_jones",
+       "breakpoints": true
++    },
++    {
++      "idx": 7,
++      "version": "7",
++      "when": 1791849600000,
++      "tag": "0007_loud_loudness_table",
++      "breakpoints": true
+     }
+   ]
+ }
+\ No newline at end of file
+diff --git a/migrations.json b/migrations.json
+index 5d779be..1251300 100644
+--- a/migrations.json
++++ b/migrations.json
+@@ -1 +1 @@
+-[{"sql":["CREATE TABLE \"playback-count\" (\n\t\"id\" integer PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name \"playback-count_id_seq\" INCREMENT BY 1 MINVALUE 1 MAXVALUE 2147483647 START WITH 1 CACHE 1),\n\t\"songcid\" varchar(255) NOT NULL,\n\t\"count\" integer NOT NULL\n);\n"],"bps":true,"folderMillis":1746214727681,"hash":"30aa92e016389862d078c10dae9578bf11734556f21bf3828db7da9ed65184a8"},{"sql":["CREATE TABLE \"temp-table\" (\n\t\"id\" integer PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name \"temp-table_id_seq\" INCREMENT BY 1 MINVALUE 1 MAXVALUE 2147483647 START WITH 1 CACHE 1),\n\t\"songcid\" varchar(255) NOT NULL\n);\n","\nALTER TABLE \"playback-count\" ADD COLUMN \"lastPlayed\" integer;"],"bps":true,"folderMillis":1747071747438,"hash":"17e69f61a2f2e98c46765e372d2fe3faebe890d6182b458ad1ab5d525eae416f"},{"sql":["CREATE TABLE \"abrepeat-table\" (\n\t\"id\" integer PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name \"abrepeat-table_id_seq\" INCREMENT BY 1 MINVALUE 1 MAXVALUE 2147483647 START WITH 1 CACHE 1),\n\t\"songcid\" varchar(255) NOT NULL,\n\t\"a\" real,\n\t\"b\" real,\n\tCONSTRAINT \"abrepeat-table_songcid_unique\" UNIQUE(\"songcid\")\n);\n","\nCREATE TABLE \"lyric-table\" (\n\t\"id\" integer PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name \"lyric-table_id_seq\" INCREMENT BY 1 MINVALUE 1 MAXVALUE 2147483647 START WITH 1 CACHE 1),\n\t\"songId\" varchar(255) NOT NULL,\n\t\"lyricKey\" varchar(255) NOT NULL,\n\t\"lyricOffset\" real NOT NULL,\n\t\"lyric\" text NOT NULL,\n\t\"source\" varchar(255),\n\tCONSTRAINT \"lyric-table_songId_unique\" UNIQUE(\"songId\")\n);\n","\nCREATE TABLE \"r128gain-table\" (\n\t\"id\" integer PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name \"r128gain-table_id_seq\" INCREMENT BY 1 MINVALUE 1 MAXVALUE 2147483647 START WITH 1 CACHE 1),\n\t\"songcid\" varchar(255) NOT NULL,\n\t\"r128gain\" real,\n\tCONSTRAINT \"r128gain-table_songcid_unique\" UNIQUE(\"songcid\")\n);\n"],"bps":true,"folderMillis":1747168543082,"hash":"d986a047d64c11aca3ca5c5617ac6b5861401086744825bcab013660d989a6db"},{"sql":["CREATE TABLE \"song-beat-table\" (\n\t\"id\" integer PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name \"song-beat-table_id_seq\" INCREMENT BY 1 MINVALUE 1 MAXVALUE 2147483647 START WITH 1 CACHE 1),\n\t\"songcid\" varchar(255) NOT NULL,\n\t\"beat\" text NOT NULL\n);\n"],"bps":true,"folderMillis":1757528305658,"hash":"31eeeb11a08214f504a9df6ec83c8203e27639bdb7381cf12b9024067b4abe86"},{"sql":["ALTER TABLE \"playback-count\" ALTER COLUMN \"lastPlayed\" SET DATA TYPE bigint;"],"bps":true,"folderMillis":1760319870598,"hash":"0abed23c1545cfdb9b68477b486da5ab2a7df5d5a8a8c81f0a7914d92a491a3c"},{"sql":["CREATE TABLE \"song-download-table\" (\n\t\"id\" integer PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name \"song-download-table_id_seq\" INCREMENT BY 1 MINVALUE 1 MAXVALUE 2147483647 START WITH 1 CACHE 1),\n\t\"songcid\" varchar(255) NOT NULL,\n\t\"downloadPath\" text NOT NULL\n);\n"],"bps":true,"folderMillis":1767284179533,"hash":"6ea3cd88d3ef41c2f2eff2088eae07d1d6724943dd85b8b08ebcffd223744093"},{"sql":["ALTER TABLE \"abrepeat-table\" ADD COLUMN \"aAbs\" real;","\nALTER TABLE \"abrepeat-table\" ADD COLUMN \"bAbs\" real;","\nALTER TABLE \"abrepeat-table\" ADD COLUMN \"resumePlayback\" real;"],"bps":true,"folderMillis":1789529290164,"hash":"17888c19a2e0f95478342f7edb933d64b2d1bb91d85d530c9b6c09a20081baff"}]
+\ No newline at end of file
++[{"sql":["CREATE TABLE \"playback-count\" (\n\t\"id\" integer PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name \"playback-count_id_seq\" INCREMENT BY 1 MINVALUE 1 MAXVALUE 2147483647 START WITH 1 CACHE 1),\n\t\"songcid\" varchar(255) NOT NULL,\n\t\"count\" integer NOT NULL\n);\n"],"bps":true,"folderMillis":1746214727681,"hash":"30aa92e016389862d078c10dae9578bf11734556f21bf3828db7da9ed65184a8"},{"sql":["CREATE TABLE \"temp-table\" (\n\t\"id\" integer PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name \"temp-table_id_seq\" INCREMENT BY 1 MINVALUE 1 MAXVALUE 2147483647 START WITH 1 CACHE 1),\n\t\"songcid\" varchar(255) NOT NULL\n);\n","\nALTER TABLE \"playback-count\" ADD COLUMN \"lastPlayed\" integer;"],"bps":true,"folderMillis":1747071747438,"hash":"17e69f61a2f2e98c46765e372d2fe3faebe890d6182b458ad1ab5d525eae416f"},{"sql":["CREATE TABLE \"abrepeat-table\" (\n\t\"id\" integer PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name \"abrepeat-table_id_seq\" INCREMENT BY 1 MINVALUE 1 MAXVALUE 2147483647 START WITH 1 CACHE 1),\n\t\"songcid\" varchar(255) NOT NULL,\n\t\"a\" real,\n\t\"b\" real,\n\tCONSTRAINT \"abrepeat-table_songcid_unique\" UNIQUE(\"songcid\")\n);\n","\nCREATE TABLE \"lyric-table\" (\n\t\"id\" integer PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name \"lyric-table_id_seq\" INCREMENT BY 1 MINVALUE 1 MAXVALUE 2147483647 START WITH 1 CACHE 1),\n\t\"songId\" varchar(255) NOT NULL,\n\t\"lyricKey\" varchar(255) NOT NULL,\n\t\"lyricOffset\" real NOT NULL,\n\t\"lyric\" text NOT NULL,\n\t\"source\" varchar(255),\n\tCONSTRAINT \"lyric-table_songId_unique\" UNIQUE(\"songId\")\n);\n","\nCREATE TABLE \"r128gain-table\" (\n\t\"id\" integer PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name \"r128gain-table_id_seq\" INCREMENT BY 1 MINVALUE 1 MAXVALUE 2147483647 START WITH 1 CACHE 1),\n\t\"songcid\" varchar(255) NOT NULL,\n\t\"r128gain\" real,\n\tCONSTRAINT \"r128gain-table_songcid_unique\" UNIQUE(\"songcid\")\n);\n"],"bps":true,"folderMillis":1747168543082,"hash":"d986a047d64c11aca3ca5c5617ac6b5861401086744825bcab013660d989a6db"},{"sql":["CREATE TABLE \"song-beat-table\" (\n\t\"id\" integer PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name \"song-beat-table_id_seq\" INCREMENT BY 1 MINVALUE 1 MAXVALUE 2147483647 START WITH 1 CACHE 1),\n\t\"songcid\" varchar(255) NOT NULL,\n\t\"beat\" text NOT NULL\n);\n"],"bps":true,"folderMillis":1757528305658,"hash":"31eeeb11a08214f504a9df6ec83c8203e27639bdb7381cf12b9024067b4abe86"},{"sql":["ALTER TABLE \"playback-count\" ALTER COLUMN \"lastPlayed\" SET DATA TYPE bigint;"],"bps":true,"folderMillis":1760319870598,"hash":"0abed23c1545cfdb9b68477b486da5ab2a7df5d5a8a8c81f0a7914d92a491a3c"},{"sql":["CREATE TABLE \"song-download-table\" (\n\t\"id\" integer PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name \"song-download-table_id_seq\" INCREMENT BY 1 MINVALUE 1 MAXVALUE 2147483647 START WITH 1 CACHE 1),\n\t\"songcid\" varchar(255) NOT NULL,\n\t\"downloadPath\" text NOT NULL\n);\n"],"bps":true,"folderMillis":1767284179533,"hash":"6ea3cd88d3ef41c2f2eff2088eae07d1d6724943dd85b8b08ebcffd223744093"},{"sql":["ALTER TABLE \"abrepeat-table\" ADD COLUMN \"aAbs\" real;","\nALTER TABLE \"abrepeat-table\" ADD COLUMN \"bAbs\" real;","\nALTER TABLE \"abrepeat-table\" ADD COLUMN \"resumePlayback\" real;"],"bps":true,"folderMillis":1789529290164,"hash":"17888c19a2e0f95478342f7edb933d64b2d1bb91d85d530c9b6c09a20081baff"},{"sql":["CREATE TABLE \"loudness-table\" (\n\t\"id\" integer PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name \"loudness-table_id_seq\" INCREMENT BY 1 MINVALUE 1 MAXVALUE 2147483647 START WITH 1 CACHE 1),\n\t\"songcid\" varchar(255) NOT NULL,\n\t\"measuredLufs\" real,\n\t\"truePeakDb\" real,\n\t\"engine\" varchar(16),\n\t\"engineVersion\" integer,\n\t\"segments\" integer,\n\t\"updatedAt\" real,\n\tCONSTRAINT \"loudness-table_songcid_unique\" UNIQUE(\"songcid\")\n);\n"],"bps":true,"folderMillis":1791849600000,"hash":"81f3fa37ca468610d3cf90f1779aae627a263426ea99a383491978028492624d"}]
+\ No newline at end of file
+diff --git a/probe/loudness/README.md b/probe/loudness/README.md
+new file mode 100644
+index 0000000..abb3a41
+--- /dev/null
++++ b/probe/loudness/README.md
+@@ -0,0 +1,22 @@
++# probe/loudness
++
++依赖极少的自检脚本，验证 `src/utils/audio/loudness/` 这套「整段测量 + 固定增益」引擎。
++
++```bash
++yarn                                    # 需要 devDependency typescript
++node probe/loudness/check.mjs
++```
++
++脚本会用仓库自带的 `typescript` 把响度模块即时转译到 `os.tmpdir()` 再 import，
++**不联网、不碰扩展、也不碰 B 站**（音源要么是构造出来的 fMP4，要么是本地 HTTP 服务）。
++
++覆盖内容：
++
++1. **sidx 解析**：合成索引盒、`first_offset` 基准点、抽取策略（`pickEvenly` / `pickCoarse`）；
++2. **BS.1770**：K 加权频响与 ITU-R BS.1770-4 官方 48kHz 系数逐点对比、多声道求和（+3.01 dB）、
++   绝对/相对门限、真峰值不被加权污染；
++3. **增益规划**：削波预算只限制提升、档案上下限、素材已过峰时不倒扣音量；
++4. **采样器端到端**：本地 Range 服务器 + 桩解码器，校验「请求到的每个字节偏移真的是 moof 盒」、
++   索引盒超过头部窗口时会补第二次 Range 请求、可用段数不足 3 段时拒绝给出结果。
++
++真机验收（切换两首音量差很大的视频、确认动态未被压平）见提交说明。
+diff --git a/probe/loudness/check.mjs b/probe/loudness/check.mjs
+new file mode 100644
+index 0000000..6899dc1
+--- /dev/null
++++ b/probe/loudness/check.mjs
+@@ -0,0 +1,379 @@
++#!/usr/bin/env node
++/* ================================================================
++ * probe/loudness/check.mjs — dependency-light checks for the loudness
++ * normalization engine. Run after `yarn`:
++ *
++ *     node probe/loudness/check.mjs
++ *
++ * The modules under src/utils/audio/loudness are plain TypeScript, so this
++ * script transpiles them with the repo's own `typescript` devDependency into
++ * os.tmpdir() and imports the result. Nothing here touches the extension, the
++ * network or B站:
++ *
++ *   1. sidx parser        — synthetic index boxes, the `first_offset` anchor
++ *   2. BS.1770            — K-weighting vs ITU-R BS.1770-4, gating, true peak
++ *   3. gain planner       — clipping budget / profile caps
++ *   4. sampler end to end — local Range server + stubbed decoder, verifying
++ *                           that every requested byte offset really is a moof
++ *                           box and that a too-short stream is rejected
++ * ================================================================ */
++import fs from 'node:fs';
++import http from 'node:http';
++import os from 'node:os';
++import path from 'node:path';
++import { createRequire } from 'node:module';
++import { fileURLToPath, pathToFileURL } from 'node:url';
++
++const require = createRequire(import.meta.url);
++const HERE = path.dirname(fileURLToPath(import.meta.url));
++const REPO = path.resolve(HERE, '..', '..');
++const SRC = path.join(REPO, 'src', 'utils', 'audio', 'loudness');
++const OUT = fs.mkdtempSync(path.join(os.tmpdir(), 'nox-loudness-probe-'));
++
++const ts = require(path.join(REPO, 'node_modules', 'typescript', 'lib', 'typescript.js'));
++
++const MODULES = ['types.ts', 'config.ts', 'sidx.ts', 'bs1770.ts', 'gainPlanner.ts', 'sampler.ts'];
++
++fs.writeFileSync(
++  path.join(OUT, 'logger.mjs'),
++  `export const logger = { debug() {}, info() {}, log() {}, notice() {}, warn() {}, error() {} };
++export default logger;
++`,
++);
++
++MODULES.forEach((file) => {
++  const js = ts
++    .transpileModule(fs.readFileSync(path.join(SRC, file), 'utf8'), {
++      compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
++      fileName: file,
++    })
++    .outputText.replace(/from ['"]\.\/([\w-]+)['"]/g, "from './$1.mjs'")
++    .replace(/from ['"]@utils\/Logger['"]/g, "from './logger.mjs'");
++  fs.writeFileSync(path.join(OUT, file.replace(/\.ts$/, '.mjs')), js);
++});
++
++const load = (name) => import(pathToFileURL(path.join(OUT, `${name}.mjs`)).href);
++const { getProfile } = await load('config');
++const { findBox, parseSidx, pickCoarse, pickEvenly, startsWithBox, verifySidx } = await load('sidx');
++const { highPassCoeffs, highShelfCoeffs, measureLoudness } = await load('bs1770');
++const { planGain } = await load('gainPlanner');
++const { sampleStreamLoudness } = await load('sampler');
++
++let pass = 0;
++let failed = 0;
++const failures = [];
++const check = (name, ok, detail) => {
++  if (ok) {
++    pass += 1;
++    console.log(`  \u2713 ${name}${detail ? `  ${detail}` : ''}`);
++  } else {
++    failed += 1;
++    failures.push(name);
++    console.log(`  \u2717 ${name}${detail ? `  ${detail}` : ''}`);
++  }
++};
++const section = (t) => console.log(`\n=== ${t} ===`);
++
++/* ------------------------------------------------------------ helpers */
++
++function buildSidxBox({ version = 0, timescale = 48000, firstOffset = 0, durations, sizes }) {
++  const count = durations.length;
++  const total = 8 + 4 + 4 + 4 + (version === 1 ? 16 : 8) + 2 + 2 + count * 12;
++  const bytes = new Uint8Array(total);
++  const view = new DataView(bytes.buffer);
++  let p = 0;
++  view.setUint32(p, total);
++  p += 4;
++  'sidx'.split('').forEach((c) => {
++    view.setUint8(p, c.charCodeAt(0));
++    p += 1;
++  });
++  view.setUint8(p, version);
++  p += 4; // version + flags
++  view.setUint32(p, 1);
++  p += 4; // reference_ID
++  view.setUint32(p, timescale);
++  p += 4;
++  if (version === 1) {
++    view.setUint32(p, 0);
++    p += 4;
++    view.setUint32(p, 0);
++    p += 4;
++    view.setUint32(p, 0);
++    p += 4;
++    view.setUint32(p, firstOffset);
++    p += 4;
++  } else {
++    view.setUint32(p, 0);
++    p += 4;
++    view.setUint32(p, firstOffset);
++    p += 4;
++  }
++  view.setUint16(p, 0);
++  p += 2;
++  view.setUint16(p, count);
++  p += 2;
++  for (let i = 0; i < count; i += 1) {
++    view.setUint32(p, sizes[i] & 0x7fffffff);
++    p += 4;
++    view.setUint32(p, durations[i]);
++    p += 4;
++    view.setUint32(p, 0);
++    p += 4;
++  }
++  return bytes;
++}
++
++const sine = (frames, fs, freq, amp) => {
++  const out = new Float32Array(frames);
++  for (let i = 0; i < frames; i += 1) out[i] = amp * Math.sin((2 * Math.PI * freq * i) / fs);
++  return out;
++};
++
++const magnitudeDb = (c, fs, freq) => {
++  const w = (2 * Math.PI * freq) / fs;
++  const re = c.b0 + c.b1 * Math.cos(-w) + c.b2 * Math.cos(-2 * w);
++  const im = c.b1 * Math.sin(-w) + c.b2 * Math.sin(-2 * w);
++  const dre = 1 + c.a1 * Math.cos(-w) + c.a2 * Math.cos(-2 * w);
++  const dim = c.a1 * Math.sin(-w) + c.a2 * Math.sin(-2 * w);
++  return 20 * Math.log10(Math.hypot(re, im) / Math.hypot(dre, dim));
++};
++
++/** writes a valid fMP4: ftyp + free + sidx + N moof segments */
++function craftFile({ initLength, segments, segmentSize, durations }) {
++  const sidxBox = buildSidxBox({ durations, sizes: durations.map(() => segmentSize) });
++  const bytes = new Uint8Array(initLength + sidxBox.length + segments * segmentSize);
++  bytes.set(new Uint8Array([0, 0, 0, 32, 102, 116, 121, 112]), 0);
++  const freeSize = initLength - 32;
++  bytes.set(
++    new Uint8Array([
++      (freeSize >>> 24) & 0xff,
++      (freeSize >>> 16) & 0xff,
++      (freeSize >>> 8) & 0xff,
++      freeSize & 0xff,
++      102,
++      114,
++      101,
++      101,
++    ]),
++    32,
++  );
++  bytes.set(sidxBox, initLength);
++  for (let i = 0; i < segments; i += 1) {
++    const at = initLength + sidxBox.length + i * segmentSize;
++    bytes.set(
++      new Uint8Array([
++        (segmentSize >>> 24) & 0xff,
++        (segmentSize >>> 16) & 0xff,
++        (segmentSize >>> 8) & 0xff,
++        segmentSize & 0xff,
++        109,
++        111,
++        111,
++        102,
++      ]),
++      at,
++    );
++  }
++  return { bytes, sidxLength: sidxBox.length, anchor: initLength + sidxBox.length };
++}
++
++function serve(fileBytes) {
++  const requests = [];
++  const server = http.createServer((req, res) => {
++    const range = req.headers.range;
++    requests.push(range);
++    const [s, e] = (range || '').replace('bytes=', '').split('-');
++    const start = Number(s) || 0;
++    const end = e ? Math.min(Number(e), fileBytes.length - 1) : fileBytes.length - 1;
++    const body = fileBytes.slice(start, end + 1);
++    res.writeHead(range ? 206 : 200, {
++      'Content-Range': `bytes ${start}-${end}/${fileBytes.length}`,
++      'Content-Length': body.length,
++      'Access-Control-Allow-Origin': '*',
++    });
++    res.end(Buffer.from(body));
++  });
++  return new Promise((resolve) => {
++    server.listen(0, '127.0.0.1', () =>
++      resolve({ server, requests, url: `http://127.0.0.1:${server.address().port}/a.m4a` }),
++    );
++  });
++}
++
++class FakeAudioBuffer {
++  constructor(channels, sampleRate) {
++    this.channels = channels;
++    this.sampleRate = sampleRate;
++    this.numberOfChannels = channels.length;
++    this.length = channels[0].length;
++  }
++
++  getChannelData(i) {
++    return this.channels[i];
++  }
++}
++
++globalThis.__probeDecoder = { initLength: 0, audit: [], fail: false };
++globalThis.OfflineAudioContext = class {
++  decodeAudioData(bytes) {
++    const cfg = globalThis.__probeDecoder;
++    const view = new Uint8Array(bytes);
++    cfg.audit.push({
++      size: view.length,
++      box:
++        cfg.initLength + 8 <= view.length
++          ? String.fromCharCode(
++              view[cfg.initLength + 4],
++              view[cfg.initLength + 5],
++              view[cfg.initLength + 6],
++              view[cfg.initLength + 7],
++            )
++          : '(too short)',
++    });
++    if (cfg.fail) return Promise.reject(new Error('Unable to decode audio data'));
++    const fs = 48000;
++    const amp = 10 ** (-23 / 20);
++    return Promise.resolve(
++      new FakeAudioBuffer(
++        [sine(fs * 5, fs, 1000, amp), sine(fs * 5, fs, 1000, amp)],
++        fs,
++      ),
++    );
++  }
++};
++const installDecoder = (initLength, fail = false) => {
++  globalThis.__probeDecoder = { initLength, audit: [], fail };
++  return globalThis.__probeDecoder.audit;
++};
++
++/* ------------------------------------------------------------- tests */
++
++function testSidx() {
++  section('1. sidx parser');
++  const durations = Array.from({ length: 43 }, () => 5 * 48000);
++  const sizes = Array.from({ length: 43 }, (_, i) => 140000 + i * 137);
++  const firstOffset = 1661;
++  const box = buildSidxBox({ durations, sizes, firstOffset });
++  const parsed = parseSidx(box, 0);
++
++  check('43 refs parsed', parsed.refs.length === 43, `${parsed.refs.length}`);
++  check('first offset honours first_offset', parsed.refs[0].offset === firstOffset);
++  const sizeSum = sizes.reduce((a, b) => a + b, 0);
++  check('offset closure', parsed.endOffset === firstOffset + sizeSum);
++  check('verify() accepts the right length', verifySidx(parsed, firstOffset + sizeSum).ok === true);
++  check('verify() rejects a wrong length', verifySidx(parsed, firstOffset + sizeSum + 7).ok !== true);
++
++  const anchored = parseSidx(box, 1482);
++  check('the first_offset anchor shifts every segment', anchored.refs[0].offset === 1482 + firstOffset);
++
++  const picks = pickEvenly(parsed.refs, 12);
++  check('pickEvenly(12) includes segment 0', picks.length === 12 && picks[0] === 0);
++  const coarse = pickCoarse(picks, 6);
++  check('pickCoarse(6) still covers both ends', coarse[0] === picks[0] && coarse[6 - 1] === picks[11]);
++  check('null input -> null', parseSidx(null, 0) === null);
++  check("startsWithBox('moof')", startsWithBox(new Uint8Array([0, 0, 7, 200, 109, 111, 111, 102]), 'moof') === true);
++  check('findBox locates a box', findBox(box, 'sidx').offset === 0);
++}
++
++async function testBs1770() {
++  section('2. K weighting + BS.1770 integrated loudness');
++  const fs = 48000;
++  const official = {
++    shelf: { b0: 1.53512485958697, b1: -2.69169618940638, b2: 1.19839281085285, a1: -1.69065929318241, a2: 0.73248077421585 },
++    hpf: { b0: 1.0, b1: -2.0, b2: 1.0, a1: -1.99004745483398, a2: 0.99007225036621 },
++  };
++  const freqs = [20, 50, 100, 500, 1000, 1681.97, 3000, 6000, 10000, 16000];
++  const maxShelf = Math.max(...freqs.map((f) => Math.abs(magnitudeDb(highShelfCoeffs(fs), fs, f) - magnitudeDb(official.shelf, fs, f))));
++  const maxHpf = Math.max(...freqs.map((f) => Math.abs(magnitudeDb(highPassCoeffs(fs), fs, f) - magnitudeDb(official.hpf, fs, f))));
++  check('shelf response matches ITU-R BS.1770-4 (<0.02 dB)', maxShelf < 0.02, `max ${maxShelf.toFixed(4)} dB`);
++  check('high pass response matches ITU-R BS.1770-4 (<0.02 dB)', maxHpf < 0.02, `max ${maxHpf.toFixed(4)} dB`);
++
++  const amp = 10 ** (-20 / 20);
++  const ch = sine(fs * 30, fs, 1000, amp);
++  const kw = magnitudeDb(highShelfCoeffs(fs), fs, 1000) + magnitudeDb(highPassCoeffs(fs), fs, 1000);
++  const mono = await measureLoudness({ channels: [ch], sampleRate: fs });
++  const stereo = await measureLoudness({ channels: [ch, ch.slice()], sampleRate: fs });
++  check('mono matches the analytic prediction', Math.abs(mono.lufs - (-0.691 + 20 * Math.log10(amp) - 3.0103 + kw)) < 0.1, `${mono.lufs}`);
++  check('stereo matches the analytic prediction', Math.abs(stereo.lufs - (-0.691 + 20 * Math.log10(amp) + kw)) < 0.1, `${stereo.lufs}`);
++  check('channels are summed, not averaged (+3.01 dB)', Math.abs(stereo.lufs - mono.lufs - 3.0103) < 0.02);
++  check('true peak == -20 dBTP', Math.abs(stereo.truePeakDb + 20) < 0.1, `${stereo.truePeakDb}`);
++
++  const mixed = new Float32Array(fs * 20);
++  for (let i = fs * 10; i < mixed.length; i += 1) mixed[i] = amp * Math.sin((2 * Math.PI * 1000 * i) / fs);
++  const gated = await measureLoudness({ channels: [mixed, mixed.slice()], sampleRate: fs });
++  check('silence is dropped by the absolute gate', gated.blocksAfterAbsGate > 80 && gated.blocksAfterAbsGate < 120, `${gated.blocksAfterAbsGate}/${gated.blocks}`);
++  check('level is unaffected by the added silence', Math.abs(gated.lufs - stereo.lufs) < 0.5, `${Math.abs(gated.lufs - stereo.lufs).toFixed(3)} dB`);
++}
++
++function testGainPlanner() {
++  section('3. gain planner');
++  const standard = getProfile('standard');
++  const cases = [
++    { name: 'already normalized -> trim', input: { measuredLufs: -13.5, truePeakDb: 1.1 }, gain: -0.5 },
++    { name: 'source already clips -> no boost, no penalty', input: { measuredLufs: -18.69, truePeakDb: 0.79 }, gain: 0 },
++    { name: 'headroom left -> clipping budget applies', input: { measuredLufs: -24, truePeakDb: -6 }, gain: 5 },
++    { name: 'quiet and low peak -> profile cap applies', input: { measuredLufs: -30, truePeakDb: -20 }, gain: 12 },
++    { name: 'too loud -> attenuation, peak irrelevant', input: { measuredLufs: -8, truePeakDb: -3 }, gain: -6 },
++    { name: 'no measurement -> 0 dB', input: { measuredLufs: null, truePeakDb: null }, gain: 0 },
++  ];
++  cases.forEach((c) => {
++    const { gainDb } = planGain(c.input, standard);
++    check(`${c.name}: ${c.gain} dB`, gainDb === c.gain, `got ${gainDb}`);
++  });
++}
++
++async function testSampler() {
++  section('4. sampler end to end (local Range server, stubbed decoder)');
++  const duration = 5 * 48000;
++  const crafted = craftFile({
++    initLength: 32600,
++    segments: 100,
++    segmentSize: 8000,
++    durations: Array.from({ length: 100 }, () => duration),
++  });
++  check('sidx box is larger than the 32 KiB head window', crafted.anchor > 32768);
++
++  /* the init fragment is everything before the sidx box */
++  const audit = installDecoder(32600);
++  const { server, requests, url } = await serve(crafted.bytes);
++  const measured = await sampleStreamLoudness(url);
++
++  check('12 segments measured', measured.segments === 12, `${measured.segments}`);
++  check('every decoded fragment is init + one moof box', audit.every((a) => a.box === 'moof'));
++  check('a second Range request fetched the rest of the sidx', requests.length === 14, `${requests.length}`);
++  check('second request continues right after the head window', requests[1] === `bytes=32768-${crafted.anchor - 1}`, requests[1]);
++  check('all media requests stay inside the media area', requests.slice(2).every((r) => Number(r.replace('bytes=', '').split('-')[0]) >= crafted.anchor));
++  await new Promise((r) => server.close(r));
++
++  installDecoder(32600, true);
++  const tiny = craftFile({
++    initLength: 32600,
++    segments: 20,
++    segmentSize: 8000,
++    durations: Array.from({ length: 20 }, () => duration),
++  });
++  const shortFile = tiny.bytes.slice(0, 32600 + tiny.sidxLength + 8000 * 2);
++  const partial = await serve(shortFile);
++  let threw = false;
++  try {
++    await sampleStreamLoudness(partial.url);
++  } catch (e) {
++    threw = true;
++  }
++  check('refuses to report a level from fewer than 3 segments', threw);
++  await new Promise((r) => partial.server.close(r));
++}
++
++/* -------------------------------------------------------------- main */
++
++testSidx();
++await testBs1770();
++testGainPlanner();
++await testSampler();
++console.log(`\n${pass} passed, ${failed} failed`);
++if (failed) {
++  console.log('failed:', failures.join(' | '));
++  process.exitCode = 1;
++}
++fs.rmSync(OUT, { recursive: true, force: true });
+diff --git a/src/NoxTypes/loudness.d.ts b/src/NoxTypes/loudness.d.ts
+new file mode 100644
+index 0000000..2a4b1e5
+--- /dev/null
++++ b/src/NoxTypes/loudness.d.ts
+@@ -0,0 +1,25 @@
++/**
++ * Settings for whole-track loudness normalization (measure the track, then
++ * apply one fixed gain). All keys are optional so that the shared defaults in
++ * azusa-player-mobile keep compiling.
++ */
++declare namespace NoxStorage {
++  export interface PlayerSettingDict {
++    /** master switch */
++    loudnessNormalize?: boolean;
++    /** one of the preset keys in utils/audio/loudness/config.ts */
++    loudnessProfile?: string;
++    /** target loudness used by the `custom` profile (LUFS) */
++    loudnessTargetLufs?: number;
++    /** max boost for the `custom` profile (dB) */
++    loudnessMaxBoostDb?: number;
++    /** how far the `custom` profile may attenuate (dB) */
++    loudnessMinGainDb?: number;
++    /** measurement backend: `auto` = sampled for B站, ffmpeg otherwise */
++    loudnessEngine?: 'auto' | 'sidx' | 'ffmpeg';
++    /** A/B switch: keep measuring, output the original audio */
++    loudnessBypass?: boolean;
++    /** measure the next track in the queue while this one plays */
++    loudnessPrefetchNext?: boolean;
++  }
++}
+diff --git a/src/components/App/App.tsx b/src/components/App/App.tsx
+index bb293d1..b852109 100644
+--- a/src/components/App/App.tsx
++++ b/src/components/App/App.tsx
+@@ -7,6 +7,7 @@ import { useHotkeys } from 'react-hotkeys-hook';
+ import usePlayback from '@hooks/usePlayback';
+ import useApp from '@stores/useApp';
+ import usePlaybackCount from '@hooks/usePlaybackCount';
++import { useNoxSetting } from '@APM/stores/useApp';
+ import { FavList } from '../Playlists/Player';
+ import LyricOverlay from '../lyric/LyricOverlay';
+ import Options from './Enum';
+@@ -43,6 +44,8 @@ export default function Player({ playlist, lastPlayDuration }: Props) {
+   const { appTitle, desktopTheme } = useApp((state) => state.playerStyle);
+   const setRJKMref = useApp((state) => state.setRJKMref);
+   const RJKMref = useApp((state) => state.RJKMref);
++  const playerSetting = useNoxSetting((state) => state.playerSetting);
++  const setPlayerSetting = useNoxSetting((state) => state.setPlayerSetting);
+   const [initialized, setInitialized] = React.useState(false);
+ 
+   useHotkeys('space', () => {
+@@ -60,6 +63,12 @@ export default function Player({ playlist, lastPlayDuration }: Props) {
+   // @ts-expect-error
+   useHotkeys('pageup', () => RJKMref?.onPlayPrevAudio());
+ 
++  // A/B the loudness normalization without leaving the player (same key as the
++  // Bilibili_LoudNorm userscript)
++  useHotkeys('shift+b', () =>
++    setPlayerSetting({ loudnessBypass: !playerSetting.loudnessBypass }),
++  );
++
+   useEffect(() => {
+     if (!currentAudio?.name) return;
+     document.title = `${currentAudio.name} - ${appTitle}`;
+diff --git a/src/components/setting/LoudnessSetting.tsx b/src/components/setting/LoudnessSetting.tsx
+new file mode 100644
+index 0000000..f6ea09d
+--- /dev/null
++++ b/src/components/setting/LoudnessSetting.tsx
+@@ -0,0 +1,215 @@
++/* ================================================================
++ * LoudnessSetting.tsx — settings panel for whole-track loudness normalization.
++ *
++ * Mirrors the userscript's panel: preset "loudness tables" plus sliders for
++ * target loudness / max boost / max attenuation, an A/B bypass switch and a
++ * cache reset.
++ * ================================================================ */
++import React, { useEffect, useState } from 'react';
++import Box from '@mui/material/Box';
++import Button from '@mui/material/Button';
++import Checkbox from '@mui/material/Checkbox';
++import Divider from '@mui/material/Divider';
++import FormControl from '@mui/material/FormControl';
++import FormControlLabel from '@mui/material/FormControlLabel';
++import InputLabel from '@mui/material/InputLabel';
++import MenuItem from '@mui/material/MenuItem';
++import Select from '@mui/material/Select';
++import Slider from '@mui/material/Slider';
++import Tooltip from '@mui/material/Tooltip';
++import Typography from '@mui/material/Typography';
++
++import { useNoxSetting } from '@APM/stores/useApp';
++import {
++  CUSTOM_PROFILE_KEY,
++  DEFAULT_PROFILES,
++  MAX_BOOST_RANGE,
++  MIN_GAIN_RANGE,
++  TARGET_RANGE,
++} from '@utils/audio/loudness/config';
++import {
++  clearLoudnessCache,
++  resolveLoudnessSetting,
++  subscribeStatus,
++} from '@utils/audio/loudness/normalizeClient';
++import { LoudnessStatus } from '@utils/audio/loudness/types';
++
++const STAGE_LABEL: Record<LoudnessStatus['stage'], string> = {
++  idle: '待机',
++  'cache-hit': '命中缓存',
++  measuring: '测量中',
++  applied: '已施加固定增益',
++  failed: '测量失败（原声）',
++  skipped: '未启用',
++};
++
++export default function LoudnessSetting() {
++  const playerSetting = useNoxSetting((state) => state.playerSetting);
++  const setPlayerSetting = useNoxSetting((state) => state.setPlayerSetting);
++  const [status, setStatus] = useState<LoudnessStatus>();
++
++  useEffect(() => subscribeStatus(setStatus), []);
++
++  const setting = resolveLoudnessSetting(playerSetting);
++  const isCustom = playerSetting.loudnessProfile === CUSTOM_PROFILE_KEY;
++  const fmt = (v?: number, unit = '') =>
++    v === undefined || v === null ? '—' : `${v}${unit}`;
++
++  return (
++    <Box sx={{ mt: 1, mb: 1 }}>
++      <Divider sx={{ mb: 1 }} />
++      <FormControlLabel
++        control={
++          <Checkbox
++            checked={playerSetting.loudnessNormalize === true}
++            onChange={(e) =>
++              setPlayerSetting({ loudnessNormalize: e.target.checked })
++            }
++          />
++        }
++        label='响度归一（整段测量 + 固定增益）'
++      />
++      <Typography variant='caption' color='text.secondary'>
++        先量完整首/整段的集成响度，再对这一个视频施加一个常数增益；
++        不做实时压缩，动态范围原样保留。首次播放要等一小会儿，之后走缓存。
++      </Typography>
++
++      <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', mt: 1 }}>
++        <FormControl size='small' sx={{ minWidth: 160 }}>
++          <InputLabel id='loudness-profile-label'>响度档案</InputLabel>
++          <Select
++            labelId='loudness-profile-label'
++            label='响度档案'
++            value={playerSetting.loudnessProfile ?? DEFAULT_PROFILES[0].key}
++            onChange={(e) =>
++              setPlayerSetting({ loudnessProfile: e.target.value })
++            }
++          >
++            {DEFAULT_PROFILES.map((p) => (
++              <MenuItem key={p.key} value={p.key}>
++                {p.label}（{p.targetLufs} LUFS）
++              </MenuItem>
++            ))}
++          </Select>
++        </FormControl>
++
++        <FormControl size='small' sx={{ minWidth: 200 }}>
++          <InputLabel id='loudness-engine-label'>测量方式</InputLabel>
++          <Select
++            labelId='loudness-engine-label'
++            label='测量方式'
++            value={playerSetting.loudnessEngine ?? 'auto'}
++            onChange={(e) =>
++              setPlayerSetting({
++                loudnessEngine: e.target.value as 'auto' | 'sidx' | 'ffmpeg',
++              })
++            }
++          >
++            <MenuItem value='auto'>自动（B站抽样 / 其它 ffmpeg）</MenuItem>
++            <MenuItem value='sidx'>抽样测量（快，约 0.5MB）</MenuItem>
++            <MenuItem value='ffmpeg'>ffmpeg 全片（慢，最准）</MenuItem>
++          </Select>
++        </FormControl>
++      </Box>
++
++      <Box sx={{ mt: 1, px: 1 }}>
++        <Tooltip title='拖动后自动切到「自定义」档案'>
++          <Typography variant='body2'>
++            目标响度 {isCustom ? '（自定义）' : ''}：
++            {setting.profile.targetLufs} LUFS
++          </Typography>
++        </Tooltip>
++        <Slider
++          size='small'
++          min={TARGET_RANGE[0]}
++          max={TARGET_RANGE[1]}
++          step={0.5}
++          value={playerSetting.loudnessTargetLufs ?? setting.profile.targetLufs}
++          onChange={(_e, v) =>
++            setPlayerSetting({
++              loudnessProfile: CUSTOM_PROFILE_KEY,
++              loudnessTargetLufs: v as number,
++            })
++          }
++        />
++        <Typography variant='body2'>
++          最大提升：{setting.profile.maxBoostDb} dB（受真峰值 ≤ -1 dBTP 约束）
++        </Typography>
++        <Slider
++          size='small'
++          min={MAX_BOOST_RANGE[0]}
++          max={MAX_BOOST_RANGE[1]}
++          step={1}
++          value={playerSetting.loudnessMaxBoostDb ?? setting.profile.maxBoostDb}
++          onChange={(_e, v) =>
++            setPlayerSetting({
++              loudnessProfile: CUSTOM_PROFILE_KEY,
++              loudnessMaxBoostDb: v as number,
++            })
++          }
++        />
++        <Typography variant='body2'>
++          最大衰减：{setting.profile.minGainDb} dB
++        </Typography>
++        <Slider
++          size='small'
++          min={MIN_GAIN_RANGE[0]}
++          max={MIN_GAIN_RANGE[1]}
++          step={1}
++          value={playerSetting.loudnessMinGainDb ?? setting.profile.minGainDb}
++          onChange={(_e, v) =>
++            setPlayerSetting({
++              loudnessProfile: CUSTOM_PROFILE_KEY,
++              loudnessMinGainDb: v as number,
++            })
++          }
++        />
++      </Box>
++
++      <FormControlLabel
++        control={
++          <Checkbox
++            checked={playerSetting.loudnessPrefetchNext !== false}
++            onChange={(e) =>
++              setPlayerSetting({ loudnessPrefetchNext: e.target.checked })
++            }
++          />
++        }
++        label='提前测量下一首（切歌更平滑）'
++      />
++      <FormControlLabel
++        control={
++          <Checkbox
++            checked={playerSetting.loudnessBypass === true}
++            onChange={(e) =>
++              setPlayerSetting({ loudnessBypass: e.target.checked })
++            }
++          />
++        }
++        label='旁路（听原声做 A/B 对比）'
++      />
++
++      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mt: 1 }}>
++        <Button
++          size='small'
++          variant='outlined'
++          onClick={() => clearLoudnessCache()}
++        >
++          清空测量缓存
++        </Button>
++        <Typography variant='caption' color='text.secondary'>
++          {status
++            ? `${STAGE_LABEL[status.stage]} · ${
++                status.engine ?? '—'
++              } · 实测 ${fmt(status.measuredLufs, ' LUFS')} · 目标 ${fmt(
++                status.targetLufs,
++                ' LUFS',
++              )} · 增益 ${fmt(status.gainDb, ' dB')} · 输出 ${status.mode}${
++                status.reason ? ` · ${status.reason}` : ''
++              }`
++            : '尚无测量记录'}
++        </Typography>
++      </Box>
++    </Box>
++  );
++}
+diff --git a/src/components/setting/SettingTab.tsx b/src/components/setting/SettingTab.tsx
+index ebaba7b..a12e8bb 100644
+--- a/src/components/setting/SettingTab.tsx
++++ b/src/components/setting/SettingTab.tsx
+@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next';
+ import { useNoxSetting } from '@APM/stores/useApp';
+ import SyncSetting from './SyncSetting';
+ import SkinSetting from './SkinSetting';
++import LoudnessSetting from './LoudnessSetting';
+ import SETTING_TAB from './enums';
+ 
+ interface BooleanCheckboxProps {
+@@ -69,6 +70,7 @@ function SettingsPanel() {
+       <BooleanCheckbox settingKey='noCookieBiliSearch' />
+       <BooleanCheckbox settingKey='fastBiliSearch' />
+       <BooleanCheckbox settingKey='r128gain' />
++      <LoudnessSetting />
+       <BooleanCheckbox
+         settingKey='memoryEfficiency'
+         callback={globalThis.location.reload}
+diff --git a/src/hooks/usePlayback.ts b/src/hooks/usePlayback.ts
+index f955321..98bad35 100644
+--- a/src/hooks/usePlayback.ts
++++ b/src/hooks/usePlayback.ts
+@@ -9,6 +9,7 @@ import { Source } from '@APM/enums/MediaFetch';
+ import { DEFAULT_NULL_URL } from '@objects/Song';
+ import { MUSICFREE } from '@utils/mediafetch/musicfree';
+ import { NoxRepeatModeToRJKM } from '@utils/RJKMUtils';
++import loudness from '@utils/audio/loudness/normalizeClient';
+ import r128gain from '../utils/ffmpeg/r128util';
+ import {
+   checkBiliVideoPlayed,
+@@ -16,7 +17,10 @@ import {
+ } from '../utils/Bilibili/BiliOperate';
+ import { saveLastPlayDuration } from '../utils/ChromeStorage';
+ 
+-const SkipR128Source: (Source | undefined | MUSICFREE)[] = [Source.biliLive];
++/** sources with no fixed duration / no DASH index: nothing to measure */
++const SkipLoudnessSource: (Source | undefined | MUSICFREE)[] = [
++  Source.biliLive,
++];
+ 
+ export default () => {
+   const playerSetting = useNoxSetting((state) => state.playerSetting);
+@@ -53,7 +57,7 @@ export default () => {
+   ) => {
+     if (
+       !useNoxSetting.getState().playerSetting.r128gain ||
+-      SkipR128Source.includes(song.source)
++      SkipLoudnessSource.includes(song.source)
+     ) {
+       return;
+     }
+@@ -65,6 +69,70 @@ export default () => {
+     }, 500);
+   };
+ 
++  /**
++   * Whole-track loudness normalization: measure the integrated loudness of the
++   * track, then apply one fixed gain (no compression, dynamics untouched).
++   *
++   * The synchronous part runs before the player swaps `src`, so the gain of a
++   * cached track is already in place when its first sample is audible.
++   */
++  const normalizeLoudness = (song: NoxMedia.Song, url: string) => {
++    if (SkipLoudnessSource.includes(song.source)) return;
++    const playerSettingNow = useNoxSetting.getState().playerSetting;
++    const options = {
++      song,
++      url,
++      getSource: () =>
++        fetchPlayUrlPromise({
++          song,
++          noBiliR128Gain: playerSettingNow.noBiliR128Gain,
++        }),
++      playerSetting: playerSettingNow,
++      mediaElement: useApp.getState().currentAudioInst,
++    };
++    loudness.resolveForPlayback(options);
++    loudness.normalizeSong(options).catch(() => undefined);
++  };
++
++  /** measure the next track in the queue so switching stays seamless */
++  const prefetchedSongs = useRef<Set<string>>(new Set());
++  const prefetchNextLoudness = (song: NoxMedia.Song) => {
++    const playerSettingNow = useNoxSetting.getState().playerSetting;
++    if (
++      playerSettingNow.loudnessNormalize !== true ||
++      playerSettingNow.loudnessPrefetchNext === false ||
++      playerSettingNow.playMode === 'shufflePlay'
++    ) {
++      return;
++    }
++    const { playingList: list } = useApp.getState();
++    const index = list.findIndex((s) => s.id === song.id);
++    const next = index >= 0 ? list[index + 1] : undefined;
++    if (
++      !next ||
++      !next.id ||
++      next.id === song.id ||
++      SkipLoudnessSource.includes(next.source) ||
++      prefetchedSongs.current.has(next.id)
++    ) {
++      return;
++    }
++    prefetchedSongs.current.add(next.id);
++    setTimeout(() => {
++      loudness
++        .prefetchSong({
++          song: next,
++          getSource: () =>
++            fetchPlayUrlPromise({
++              song: next,
++              noBiliR128Gain: playerSettingNow.noBiliR128Gain,
++            }),
++          playerSetting: playerSettingNow,
++        })
++        .catch(() => undefined);
++    }, 5000);
++  };
++
+   const musicSrcParser = async (v: NoxMedia.Song) => {
+     try {
+       const resolvedUrl = await fetchPlayUrlPromise({
+@@ -74,7 +142,12 @@ export default () => {
+       if (resolvedUrl.url === DEFAULT_NULL_URL) {
+         throw new Error('resolve failed');
+       }
+-      parseR128Gain(v, async () => resolvedUrl);
++      if (useNoxSetting.getState().playerSetting.loudnessNormalize === true) {
++        normalizeLoudness(v, resolvedUrl.url);
++      } else {
++        // legacy replaygain path, kept for the pre-existing `r128gain` switch
++        parseR128Gain(v, async () => resolvedUrl);
++      }
+       return resolvedUrl.url;
+     } catch (e) {
+       console.error(`[resolveURL] failed to resolve ${v.bvid}: ${e}`);
+@@ -186,6 +259,8 @@ export default () => {
+ 
+   const onAudioVolumeChange = (currentVolume: number) => {
+     // console.log('[RJKM] audio volume change', currentVolume)
++    // never persist a volume written by the loudness fallback mode
++    if (loudness.isWritingVolume()) return;
+     setPlayerSettings({ defaultVolume: Math.sqrt(currentVolume) });
+   };
+ 
+@@ -242,6 +317,7 @@ export default () => {
+     setCurrentAudio(audioInfo);
+     setCurrentPlayingId(audioInfo.id);
+     sendBiliHeartbeat(audioInfo);
++    prefetchNextLoudness(audioInfo);
+   };
+ 
+   const onAudioError = (
+diff --git a/src/utils/audio/loudness/bs1770.ts b/src/utils/audio/loudness/bs1770.ts
+new file mode 100644
+index 0000000..350bc62
+--- /dev/null
++++ b/src/utils/audio/loudness/bs1770.ts
+@@ -0,0 +1,294 @@
++/* ================================================================
++ * bs1770.ts — ITU-R BS.1770-4 integrated loudness + true peak.
++ *
++ * Ported from Bilibili_LoudNorm/src/loudness.js (MIT, (c) 2026 Moxia9527).
++ *
++ *   a) K-weighting = high shelf (+4dB @1682Hz) -> high pass (38Hz),
++ *      coefficients computed for the actual sample rate
++ *   b) 400ms blocks, 100ms step (75% overlap)
++ *   c) block loudness l_j = -0.691 + 10*log10( sum_i G_i * z_ij )
++ *   d) absolute gate: drop blocks below -70 LUFS
++ *   e) relative gate: gamma = mean energy of surviving blocks - 10 LU
++ *   f) integrated = -0.691 + 10*log10( sum z / N ) over gated blocks
++ *   g) true peak = max |sample| of the unweighted PCM
++ *
++ * Channel energies are summed, NOT averaged: BS.1770 weights channels
++ * (L=R=1.0, C=Ls=Rs=1.41), so the same signal in both channels reads 3.01dB
++ * louder than mono. Averaging by channel count silently lowered every stereo
++ * track by 3dB and broke the comparison against B站's own metadata.
++ * ================================================================ */
++import { LUM_CHUNK_FRAMES } from './config';
++import { LoudnessCore, PcmChannels } from './types';
++
++const OFFSET_691 = -0.691;
++const ABS_GATE_LUFS = -70;
++const REL_GATE_LU = 10;
++
++export interface BiquadCoeffs {
++  b0: number;
++  b1: number;
++  b2: number;
++  a1: number;
++  a2: number;
++}
++
++export interface BiquadState {
++  x1: number;
++  x2: number;
++  y1: number;
++  y2: number;
++}
++
++export const biquadState = (): BiquadState => ({ x1: 0, x2: 0, y1: 0, y2: 0 });
++
++/** High shelf: G=+3.999843853973347 dB, fc=1681.974450955533 Hz, Q=0.7071752369554196 */
++export const highShelfCoeffs = (fs: number): BiquadCoeffs => {
++  const G = 3.999843853973347;
++  const Q = 0.7071752369554196;
++  const fc = 1681.974450955533;
++
++  const K = Math.tan((Math.PI * fc) / fs);
++  const Vh = 10 ** (G / 20);
++  const Vb = Vh ** 0.4996667741545416;
++  const a0 = 1 + K / Q + K * K;
++
++  return {
++    b0: (Vh + (Vb * K) / Q + K * K) / a0,
++    b1: (2 * (K * K - Vh)) / a0,
++    b2: (Vh - (Vb * K) / Q + K * K) / a0,
++    a1: (2 * (K * K - 1)) / a0,
++    a2: (1 - K / Q + K * K) / a0,
++  };
++};
++
++/**
++ * High pass: fc=38.13547087602444 Hz, Q=0.5003270373238773.
++ *
++ * The numerator is intentionally NOT divided by a0 (b = [1, -2, 1]): that is
++ * the BS.1770-4 form, which carries +0.043dB of gain. Normalizing it the
++ * usual way makes every measurement 0.043dB low.
++ */
++export const highPassCoeffs = (fs: number): BiquadCoeffs => {
++  const Q = 0.5003270373238773;
++  const fc = 38.13547087602444;
++
++  const K = Math.tan((Math.PI * fc) / fs);
++  const a0 = 1 + K / Q + K * K;
++
++  return {
++    b0: 1,
++    b1: -2,
++    b2: 1,
++    a1: (2 * (K * K - 1)) / a0,
++    a2: (1 - K / Q + K * K) / a0,
++  };
++};
++
++/**
++ * Direct form I biquad, in place, over x[start, end).
++ * The state is carried across calls so chunked filtering is bit-identical to
++ * filtering the whole buffer at once.
++ */
++export const biquadRange = (
++  x: Float32Array,
++  start: number,
++  end: number,
++  c: BiquadCoeffs,
++  st: BiquadState,
++) => {
++  let { x1, x2, y1, y2 } = st;
++  for (let i = start; i < end; i += 1) {
++    const xi = x[i];
++    const yi = c.b0 * xi + c.b1 * x1 + c.b2 * x2 - c.a1 * y1 - c.a2 * y2;
++    x2 = x1;
++    x1 = xi;
++    y2 = y1;
++    y1 = yi;
++    x[i] = yi;
++  }
++  st.x1 = x1;
++  st.x2 = x2;
++  st.y1 = y1;
++  st.y2 = y2;
++};
++
++export const biquadInPlace = (x: Float32Array, c: BiquadCoeffs) => {
++  biquadRange(x, 0, x.length, c, biquadState());
++};
++
++export const peakOf = (x: Float32Array) => {
++  let peak = 0;
++  for (let i = 0; i < x.length; i += 1) {
++    const a = x[i] < 0 ? -x[i] : x[i];
++    if (a > peak) peak = a;
++  }
++  return peak;
++};
++
++export interface MeasureOptions {
++  /** called between chunks so a UI can stay responsive */
++  onYield?: () => Promise<void> | void;
++  /** chunk size in frames; defaults to LUM_CHUNK_FRAMES */
++  chunkFrames?: number;
++}
++
++/**
++ * Concatenate decoded fragments into one continuous PCM buffer.
++ *
++ * The fragments are far apart in the original track, so a hard cut would
++ * create a step at every boundary; 5ms fades cost less than 0.01dB of
++ * measured loudness and keep the waveform clean.
++ *
++ */
++export const concatPcm = (parts: PcmChannels[]): PcmChannels | null => {
++  const usable = (parts || []).filter((p) => p && p.channels.length);
++  if (!usable.length) return null;
++
++  const sampleRate = usable[0].sampleRate;
++  const channelCount = usable.reduce(
++    (min, p) => Math.min(min, p.channels.length),
++    usable[0].channels.length,
++  );
++  const total = usable.reduce((sum, p) => sum + p.channels[0].length, 0);
++  const fade = Math.min(Math.round(0.005 * sampleRate), Math.floor(total / 8));
++
++  const channels: Float32Array[] = [];
++  for (let c = 0; c < channelCount; c += 1) {
++    channels.push(new Float32Array(total));
++  }
++
++  let offset = 0;
++  usable.forEach((part) => {
++    const length = part.channels[0].length;
++    for (let c = 0; c < channelCount; c += 1) {
++      const dst = channels[c];
++      dst.set(part.channels[c], offset);
++      for (let i = 0; i < fade; i += 1) {
++        const w = i / fade;
++        dst[offset + i] *= w;
++        dst[offset + length - 1 - i] *= w;
++      }
++    }
++    offset += length;
++  });
++
++  return { channels, sampleRate };
++};
++
++/**
++ * BS.1770-4 integrated loudness of the given PCM.
++ * Pure: no DOM, no globals, safe to unit test under plain Node.
++ */
++export const measureLoudness = async (
++  pcm: PcmChannels,
++  opts?: MeasureOptions,
++): Promise<LoudnessCore> => {
++  const options = opts || {};
++  const { sampleRate: fs, channels } = pcm;
++  const frames = channels[0]?.length ?? 0;
++
++  const hs = highShelfCoeffs(fs);
++  const hp = highPassCoeffs(fs);
++
++  /** per frame sum of K-weighted channel energy (sum, not average: see header) */
++  const z = new Float64Array(frames + 1);
++  let truePeakLinear = 0;
++
++  const chunk = Math.max(
++    1,
++    Math.min(
++      frames,
++      Math.floor(options.chunkFrames ?? LUM_CHUNK_FRAMES) || frames,
++    ),
++  );
++  const wantYield = typeof options.onYield === 'function';
++  let lastYield = Date.now();
++
++  for (let ch = 0; ch < channels.length; ch += 1) {
++    const src = channels[ch];
++    const buf = new Float32Array(frames);
++    buf.set(src);
++
++    const st1 = biquadState();
++    const st2 = biquadState();
++
++    for (let s = 0; s < frames; s += chunk) {
++      const e = Math.min(s + chunk, frames);
++
++      // Unweighted peak, scanned before the filters rewrite the buffer.
++      let pk = 0;
++      for (let i = s; i < e; i += 1) {
++        const a = buf[i] < 0 ? -buf[i] : buf[i];
++        if (a > pk) pk = a;
++      }
++      if (pk > truePeakLinear) truePeakLinear = pk;
++
++      biquadRange(buf, s, e, hs, st1);
++      biquadRange(buf, s, e, hp, st2);
++
++      for (let i = s; i < e; i += 1) {
++        const v = buf[i];
++        z[i] += v * v;
++      }
++
++      if (wantYield && Date.now() - lastYield > 8) {
++        lastYield = Date.now();
++        // eslint-disable-next-line no-await-in-loop
++        await options.onYield?.();
++      }
++    }
++  }
++
++  const blockLen = Math.round(0.4 * fs);
++  const stepLen = Math.round(0.1 * fs);
++
++  const blockEnergy: number[] = [];
++  if (frames >= blockLen) {
++    for (let s = 0; s + blockLen <= frames; s += stepLen) {
++      let sum = 0;
++      for (let i = s; i < s + blockLen; i += 1) sum += z[i];
++      blockEnergy.push(sum / blockLen);
++    }
++  }
++
++  const lufsOf = (energy: number) =>
++    OFFSET_691 + 10 * Math.log10(energy > 0 ? energy : 1e-12);
++
++  const stage1 = blockEnergy.filter((e) => lufsOf(e) >= ABS_GATE_LUFS);
++
++  let integrated: number | null = null;
++  let stage2: number[] = [];
++  if (stage1.length) {
++    const sum = stage1.reduce((a, b) => a + b, 0);
++    const gamma = lufsOf(sum / stage1.length) - REL_GATE_LU;
++    stage2 = stage1.filter((e) => lufsOf(e) >= gamma);
++    const use = stage2.length ? stage2 : stage1;
++    const sum2 = use.reduce((a, b) => a + b, 0);
++    integrated = lufsOf(sum2 / use.length);
++  }
++
++  const truePeakDb =
++    20 * Math.log10(truePeakLinear > 0 ? truePeakLinear : 1e-12);
++
++  return {
++    lufs: integrated === null ? null : Number(integrated.toFixed(2)),
++    truePeakDb: Number(truePeakDb.toFixed(2)),
++    blocks: blockEnergy.length,
++    blocksAfterAbsGate: stage1.length,
++    blocksAfterRelGate: stage2.length,
++    frames,
++    sampleRate: fs,
++    channels: channels.length,
++  };
++};
++
++export default {
++  measureLoudness,
++  concatPcm,
++  highShelfCoeffs,
++  highPassCoeffs,
++  biquadInPlace,
++  biquadRange,
++  biquadState,
++  peakOf,
++};
+diff --git a/src/utils/audio/loudness/config.ts b/src/utils/audio/loudness/config.ts
+new file mode 100644
+index 0000000..aee7c14
+--- /dev/null
++++ b/src/utils/audio/loudness/config.ts
+@@ -0,0 +1,144 @@
++/* ================================================================
++ * config.ts — constants and preset profiles for loudness normalization.
++ *
++ * Defaults mirror the userscript's tuned values (Bilibili_LoudNorm, MIT,
++ * (c) 2026 Moxia9527) so the measured loudness matches its panel.
++ * ================================================================ */
++import { GainProfile } from './types';
++
++/** Bump when the measurement math changes; stale cache rows are ignored. */
++export const LOUDNESS_ENGINE_VERSION = 1;
++
++/**
++ * Boost ceiling: gain is only raised while the real true peak stays at or
++ * below this value. Attenuation is never limited by the ceiling, because
++ * lowering the gain can only lower peaks.
++ */
++export const PEAK_CEILING_DB = -1.0;
++
++/** setTargetAtTime time constant (seconds); 3 tau is about 120ms. */
++export const GAIN_RAMP_TAU = 0.04;
++
++/** Sample rate used to decode the sampled fragments (B站 audio is 48kHz). */
++export const DECODE_SAMPLE_RATE = 48000;
++
++/* ---------------------------------------------------- preset profiles
++ * `custom` is written by the settings sliders. Standard == -14 LUFS so that
++ * content B站 already normalized ends up with ~0dB of gain. */
++export const CUSTOM_PROFILE_KEY = 'custom';
++
++export const DEFAULT_PROFILES: GainProfile[] = [
++  {
++    key: 'standard',
++    label: '标准',
++    targetLufs: -14,
++    maxBoostDb: 12,
++    minGainDb: -60,
++  },
++  {
++    key: 'dynamic',
++    label: '高动态',
++    targetLufs: -24,
++    maxBoostDb: 12,
++    minGainDb: -60,
++  },
++  {
++    key: 'headphone',
++    label: '耳机',
++    targetLufs: -16,
++    maxBoostDb: 12,
++    minGainDb: -60,
++  },
++  {
++    key: 'speaker',
++    label: '外放',
++    targetLufs: -11,
++    maxBoostDb: 10,
++    minGainDb: -60,
++  },
++  {
++    key: 'night',
++    label: '深夜',
++    targetLufs: -20,
++    maxBoostDb: 6,
++    minGainDb: -60,
++  },
++  {
++    key: CUSTOM_PROFILE_KEY,
++    label: '自定义',
++    targetLufs: -14,
++    maxBoostDb: 12,
++    minGainDb: -24,
++  },
++];
++
++export const DEFAULT_PROFILE_KEY = 'standard';
++
++/** Slider ranges, same as the userscript's settings panel. */
++export const TARGET_RANGE: [number, number] = [-28, -8];
++export const MAX_BOOST_RANGE: [number, number] = [0, 18];
++export const MIN_GAIN_RANGE: [number, number] = [-60, 0];
++
++/* -------------------------------------------------- sampling budget
++ * Costs: 12 segments of ~5s == ~60s of audio == ~0.5MB, i.e. <1% of a long
++ * video and ~20% of a short song. `progressive` makes the first result
++ * available after `FIRST_BATCH_EAGER_AT` segments while the rest streams in. */
++export const SAMPLE_SEGMENTS = 12;
++export const FIRST_BATCH_SEGMENTS = 6;
++export const FIRST_BATCH_EAGER_AT = 4;
++/** Only re-apply when the refined gain differs by more than this. */
++export const REFINE_MIN_DELTA_DB = 0.5;
++export const SEGMENT_CONCURRENCY = 6;
++export const REQUEST_GAP_MS = 80;
++/** First Range request: covers ftyp+moov+sidx of most files in one shot. */
++export const HEAD_WINDOW_BYTES = 32768;
++export const FETCH_TIMEOUT_MS = 15000;
++export const SEGMENT_TIMEOUT_MS = 5000;
++export const SEGMENT_RETRY = 1;
++export const SEGMENT_RETRY_DELAY_MS = 250;
++/** Below this, admit that the network is too flaky and keep the original audio. */
++export const MIN_SEGMENTS_TO_PROCEED = 3;
++/** Yield to the event loop every N frames so the UI never blocks. */
++export const LUM_CHUNK_FRAMES = 240000;
++
++/** Audio ids that decode unreliably (dolby / hi-res); excluded from sampling. */
++export const EXCLUDED_AUDIO_IDS = [30250, 30251];
++
++/** ReplayGain 2.0 reference loudness used by ffmpeg's `replaygain` filter. */
++export const REPLAYGAIN_REFERENCE_LUFS = -18;
++
++/**
++ * Hosts we are allowed to touch for sampling. They are the only hosts we set
++ * `crossOrigin='anonymous'` on, because they are the only ones we verified to
++ * answer with `Access-Control-Allow-Origin: *` (see the PR test notes).
++ */
++export const BILI_CDN_HOST_SUFFIXES = [
++  'bilivideo.com',
++  'bilivideo.cn',
++  'hdslb.com',
++  'cgvideo.com',
++  'acgvideo.com',
++];
++
++/** true when the URL points at a host we can sample (and may take over). */
++export const isBiliCdnUrl = (url?: string) => {
++  if (!url) return false;
++  try {
++    const { hostname } = new URL(url);
++    return BILI_CDN_HOST_SUFFIXES.some(
++      (suffix) => hostname === suffix || hostname.endsWith(`.${suffix}`),
++    );
++  } catch {
++    return false;
++  }
++};
++
++/** Profiles are a fixed table plus the live `custom` row from the settings. */
++export const getProfile = (
++  key: string | undefined,
++  overrides?: Partial<GainProfile>,
++): GainProfile => {
++  const found =
++    DEFAULT_PROFILES.find((p) => p.key === key) ?? DEFAULT_PROFILES[0];
++  return overrides ? { ...found, ...overrides } : found;
++};
+diff --git a/src/utils/audio/loudness/ffmpegEngine.ts b/src/utils/audio/loudness/ffmpegEngine.ts
+new file mode 100644
+index 0000000..41b571e
+--- /dev/null
++++ b/src/utils/audio/loudness/ffmpegEngine.ts
+@@ -0,0 +1,61 @@
++/* ================================================================
++ * ffmpegEngine.ts — whole file measurement via ffmpeg.wasm (ReplayGain 2.0).
++ *
++ * This is the legacy nox-player path, kept as a fallback (and as an explicit
++ * user choice) for sources where the sidx sampler does not apply.
++ *
++ * It downloads and decodes the *entire* stream, so it is much more expensive
++ * than sampling: a 110 minute video's audio is ~54MB and takes tens of
++ * seconds. Values are normalized into the same units as the sampler, so both
++ * engines feed one cache and one gain planner.
++ * ================================================================ */
++import { logger } from '@utils/Logger';
++
++import { REPLAYGAIN_REFERENCE_LUFS } from './config';
++import { LoudnessMeasurement } from './types';
++
++/**
++ * ReplayGain 2.0 gain is defined against a -18 LUFS reference, so
++ * `measured = reference - gain` turns ffmpeg's number into LUFS.
++ */
++export const replayGainToMeasurement = (
++  trackGainDb: number,
++  trackPeakLinear: number | null,
++  elapsedMs = 0,
++): LoudnessMeasurement => ({
++  measuredLufs: Number((REPLAYGAIN_REFERENCE_LUFS - trackGainDb).toFixed(2)),
++  truePeakDb:
++    trackPeakLinear && trackPeakLinear > 0
++      ? Number((20 * Math.log10(trackPeakLinear)).toFixed(2))
++      : null,
++  engine: 'ffmpeg',
++  segments: 0,
++  elapsedMs,
++});
++
++export const measureStreamLoudnessWithFFmpeg = async (
++  url: string,
++): Promise<LoudnessMeasurement> => {
++  const started = Date.now();
++  // Dynamic import: ffmpeg.wasm is large and loads at import time, so it must
++  // not be pulled in unless this engine is actually used.
++  const { measureReplayGain } = await import('@utils/ffmpeg/ffmpeg');
++  const { trackGainDb, trackPeakLinear } = await measureReplayGain(url);
++
++  if (trackGainDb === null || !Number.isFinite(trackGainDb)) {
++    throw new Error('ffmpeg replaygain produced no track_gain');
++  }
++
++  const measurement = replayGainToMeasurement(
++    trackGainDb,
++    trackPeakLinear,
++    Date.now() - started,
++  );
++  logger.debug(
++    `[loudness] ffmpeg replaygain ${trackGainDb}dB / peak ${trackPeakLinear} ` +
++      `-> ${measurement.measuredLufs} LUFS in ${measurement.elapsedMs}ms`,
++  );
++  return measurement;
++};
++
++export default { measureStreamLoudnessWithFFmpeg, replayGainToMeasurement };
+diff --git a/src/utils/audio/loudness/gainPlanner.ts b/src/utils/audio/loudness/gainPlanner.ts
+new file mode 100644
+index 0000000..1038b45
+--- /dev/null
++++ b/src/utils/audio/loudness/gainPlanner.ts
+@@ -0,0 +1,100 @@
++/* ================================================================
++ * gainPlanner.ts — loudness to gain (pure calculation).
++ *
++ * Ported from Bilibili_LoudNorm/src/gain-planner.js (MIT, (c) 2026 Moxia9527).
++ *
++ *   gain_dB = target loudness - measured loudness
++ *
++ * then constrained by:
++ *   1. clipping budget (limits boosts only, never forces attenuation)
++ *   2. profile.maxBoostDb
++ *   3. profile.minGainDb
++ *
++ * Note on (1): the naive form `clamp(gain, -INF, peakCeiling - truePeak)`
++ * treats the clipping budget as a "max gain", so already-clipped material
++ * (true peak > 0 dBTP is common in loudness-compressed sources) gets pushed
++ * *below* its original level - the quieter it is, the less it should be
++ * boosted, but it ends up attenuated. Measured counter example from the
++ * userscript's test suite: -18.69 LUFS / +0.79 dBTP should gain +4.69dB, the
++ * naive form gives -1.79dB and lands 1.8dB below the original. So the headroom
++ * is clamped at 0: no boost when there is no room, and never a penalty.
++ * ================================================================ */
++import { PEAK_CEILING_DB } from './config';
++import { GainPlan, GainProfile } from './types';
++
++export interface GainPlannerInput {
++  measuredLufs?: number | null;
++  truePeakDb?: number | null;
++}
++
++export const planGain = (
++  input: GainPlannerInput,
++  profile: GainProfile,
++): GainPlan => {
++  const targetLufs = profile.targetLufs;
++  const measured = input?.measuredLufs;
++
++  if (!Number.isFinite(measured)) {
++    return {
++      gainDb: 0,
++      targetLufs,
++      rawGainDb: null,
++      limited: false,
++      limitReason: 'no-measurement',
++      ceilingHeadroom: null,
++      profileKey: profile.key,
++    };
++  }
++
++  const rawGainDb = targetLufs - (measured as number);
++  let gainDb = rawGainDb;
++  let limited = false;
++  let limitReason: string | null = null;
++  let ceilingHeadroom: number | null = null;
++
++  const tp = input.truePeakDb;
++  if (Number.isFinite(tp)) {
++    ceilingHeadroom = PEAK_CEILING_DB - (tp as number);
++
++    // only the boost side is clamped; attenuation is always allowed
++    const maxAllowedGain = Math.max(0, ceilingHeadroom);
++    if (rawGainDb > maxAllowedGain) {
++      gainDb = maxAllowedGain;
++      limited = true;
++      limitReason =
++        ceilingHeadroom < 0
++          ? '+0 dB (source already clips)'
++          : `+${ceilingHeadroom.toFixed(1)} dB (anti clipping)`;
++    }
++  }
++
++  const cap = Number.isFinite(profile.maxBoostDb) ? profile.maxBoostDb : 12;
++  if (gainDb > cap) {
++    gainDb = cap;
++    limited = true;
++    limitReason = `profile cap +${cap} dB`;
++  }
++
++  const floor = Number.isFinite(profile.minGainDb) ? profile.minGainDb : -60;
++  if (gainDb < floor) {
++    gainDb = floor;
++    limited = true;
++    limitReason = `profile floor ${floor} dB`;
++  }
++
++  return {
++    gainDb: Number(gainDb.toFixed(2)),
++    targetLufs,
++    rawGainDb: Number(rawGainDb.toFixed(2)),
++    limited,
++    limitReason,
++    ceilingHeadroom:
++      ceilingHeadroom === null ? null : Number(ceilingHeadroom.toFixed(2)),
++    profileKey: profile.key,
++  };
++};
++
++/** linear amplitude for a dB gain */
++export const dbToLinear = (db: number) => 10 ** (db / 20);
++
++export default { planGain, dbToLinear };
+diff --git a/src/utils/audio/loudness/loudnessEngine.ts b/src/utils/audio/loudness/loudnessEngine.ts
+new file mode 100644
+index 0000000..9bae80a
+--- /dev/null
++++ b/src/utils/audio/loudness/loudnessEngine.ts
+@@ -0,0 +1,281 @@
++/* ================================================================
++ * loudnessEngine.ts — where the fixed gain is applied.
++ *
++ * Ported (and trimmed to a single, single-instance <audio> element) from
++ * Bilibili_LoudNorm/src/audio-engine.js (MIT, (c) 2026 Moxia9527).
++ *
++ *     <audio> -> MediaElementSource -> normGain -> destination
++ *
++ * Notes:
++ *   - The element keeps its own `volume` (the player's slider): per the Web
++ *     Audio spec the media element "MUST behave in an identical fashion" once
++ *     a MediaElementAudioSourceNode exists, so volume and our gain multiply.
++ *     That is exactly why the gain must live in a GainNode instead of being
++ *     written into `volume`: it no longer fights the slider or the saved
++ *     default volume.
++ *   - Three hard rules, learned from the userscript's bug reports:
++ *       1. never disconnect a node (it silences the element forever),
++ *       2. never call play()/pause()/preventDefault(),
++ *       3. never take the element over while the AudioContext is not running
++ *          (the audio would be routed into a suspended graph == silence).
++ *   - The gain is a single constant per track (plus a 120ms smoothing ramp on
++ *     change). No compression, no limiting, dynamic range untouched.
++ * ================================================================ */
++import { logger } from '@utils/Logger';
++
++import { GAIN_RAMP_TAU } from './config';
++import { dbToLinear } from './gainPlanner';
++import { LoudnessApplicationMode } from './types';
++
++let ctx: AudioContext | null = null;
++let normGain: GainNode | null = null;
++
++/** elements already taken over (createMediaElementSource may only run once) */
++const attached = new WeakSet<HTMLAudioElement>();
++/** elements that threw; never retried, so we do not spam the console */
++const failed = new WeakSet<HTMLAudioElement>();
++
++let desiredGainDb = 0;
++let appliedGainDb = 0;
++let bypass = false;
++let mode: LoudnessApplicationMode = 'off';
++
++/* ------------------------------------------------------ volume fallback */
++
++let volumeElement: HTMLAudioElement | null = null;
++/** the player's own volume, i.e. the value the slider asked for */
++let baseVolume = 1;
++let volumeAppliedDb = 0;
++/** true while our own `volume` write is in flight, so we can ignore it */
++let writingVolume = false;
++let volumeResetTimer: ReturnType<typeof setTimeout> | null = null;
++
++const ensureContext = () => {
++  if (ctx) return ctx;
++  const Ctor = globalThis.AudioContext;
++  if (!Ctor) {
++    logger.notice(
++      '[loudness] AudioContext is unavailable; keeping original audio',
++    );
++    return null;
++  }
++  try {
++    ctx = new Ctor();
++    normGain = ctx.createGain();
++    normGain.gain.value = 1;
++    normGain.connect(ctx.destination);
++    logger.info(
++      `[loudness] AudioContext ready (${ctx.sampleRate}Hz, state=${ctx.state})`,
++    );
++  } catch (e) {
++    logger.notice(`[loudness] AudioContext creation failed: ${e}`);
++    ctx = null;
++    normGain = null;
++  }
++  return ctx;
++};
++
++/**
++ * Take the element over with a GainNode.
++ * Returns false when the caller should fall back (never throws, never
++ * interrupts playback).
++ */
++export const attach = async (el: HTMLAudioElement): Promise<boolean> => {
++  if (attached.has(el)) return true;
++  if (failed.has(el)) return false;
++
++  const context = ensureContext();
++  if (!context) return false;
++
++  if (context.state !== 'running') {
++    try {
++      await context.resume();
++    } catch (e) {
++      logger.debug(`[loudness] ctx.resume() rejected: ${e}`);
++    }
++  }
++  if (context.state !== 'running') {
++    // rule 3: routing into a suspended context would silence the player
++    logger.notice(
++      `[loudness] AudioContext is ${context.state}; not taking over yet`,
++    );
++    return false;
++  }
++
++  try {
++    const source = context.createMediaElementSource(el);
++    source.connect(normGain as GainNode);
++    attached.add(el);
++    leaveVolumeMode(el);
++    mode = 'gain-node';
++    applyGain({ immediate: true });
++    logger.info(
++      '[loudness] <audio> is now routed through the loudness gain node',
++    );
++    return true;
++  } catch (e) {
++    failed.add(el);
++    logger.notice(
++      `[loudness] createMediaElementSource failed (${
++        (e as Error)?.name ?? 'unknown'
++      }); keeping original audio`,
++    );
++    return false;
++  }
++};
++
++/* ------------------------------------------------------ volume fallback */
++
++const onVolumeChange = () => {
++  const el = volumeElement;
++  if (!el) return;
++  if (writingVolume) {
++    writingVolume = false;
++    return;
++  }
++  // the player (or the user) changed the volume: treat it as the new base and
++  // re-apply our attenuation on top of it
++  const currentLinear = dbToLinear(volumeAppliedDb);
++  baseVolume = currentLinear > 0 ? el.volume / currentLinear : el.volume;
++  applyVolumeGain(volumeAppliedDb);
++};
++
++const applyVolumeGain = (db: number) => {
++  const el = volumeElement;
++  if (!el) return false;
++  // element volume cannot boost (max 1.0), so attenuation only
++  const limitedDb = Math.min(0, db);
++  const target = Math.max(0, Math.min(1, baseVolume * dbToLinear(limitedDb)));
++
++  writingVolume = true;
++  if (volumeResetTimer) clearTimeout(volumeResetTimer);
++  volumeResetTimer = setTimeout(() => {
++    writingVolume = false;
++  }, 300);
++
++  try {
++    el.volume = target;
++  } catch (e) {
++    logger.notice(`[loudness] volume fallback write failed: ${e}`);
++    return false;
++  }
++  volumeAppliedDb = limitedDb;
++  appliedGainDb = limitedDb;
++  return true;
++};
++
++/**
++ * Fallback used when the GainNode is unavailable: attenuate with `volume`.
++ * Boost is impossible here, so the plan is clamped to <= 0dB.
++ */
++export const enterVolumeMode = (el: HTMLAudioElement) => {
++  if (mode === 'gain-node') return;
++  if (volumeElement === el) return;
++  mode = 'volume';
++  volumeElement = el;
++  baseVolume = el.volume > 0 ? el.volume : 1;
++  el.addEventListener('volumechange', onVolumeChange);
++  applyVolumeGain(desiredGainDb);
++  logger.notice(
++    '[loudness] falling back to element volume: attenuation only, no boost',
++  );
++};
++
++/** true while our own volume write is in flight (used to avoid persisting it
++ * as the user's default volume) */
++export const isWritingVolume = () => writingVolume;
++
++/**
++ * Undo the volume fallback once the GainNode took over: put the player's own
++ * volume back and stop listening to volumechange.
++ */
++const leaveVolumeMode = (el: HTMLAudioElement) => {
++  if (volumeElement !== el) return;
++  el.removeEventListener('volumechange', onVolumeChange);
++  try {
++    if (volumeAppliedDb !== 0) el.volume = Math.max(0, Math.min(1, baseVolume));
++  } catch (e) {
++    logger.debug(`[loudness] restoring volume failed: ${e}`);
++  }
++  volumeElement = null;
++  volumeAppliedDb = 0;
++  writingVolume = false;
++  if (volumeResetTimer) {
++    clearTimeout(volumeResetTimer);
++    volumeResetTimer = null;
++  }
++};
++
++/* -------------------------------------------------------------- gain */
++
++const applyGain = (opts?: { immediate?: boolean }) => {
++  const target = bypass ? 0 : desiredGainDb;
++
++  if (mode === 'volume') return applyVolumeGain(target);
++
++  if (!ctx || !normGain) return false;
++  const linear = dbToLinear(target);
++  const ramp = !(opts?.immediate === true);
++
++  try {
++    if (ramp && ctx.state === 'running') {
++      const now = ctx.currentTime;
++      const current = normGain.gain.value;
++      normGain.gain.cancelScheduledValues(now);
++      normGain.gain.setValueAtTime(current, now);
++      normGain.gain.setTargetAtTime(linear, now, GAIN_RAMP_TAU);
++    } else {
++      normGain.gain.value = linear;
++    }
++    appliedGainDb = target;
++    logger.debug(
++      `[loudness] gain ${target >= 0 ? '+' : ''}${target.toFixed(2)}dB ` +
++        `(${ramp ? 'ramp' : 'immediate'}${bypass ? ', bypassed' : ''})`,
++    );
++    return true;
++  } catch (e) {
++    logger.notice(`[loudness] setting gain failed: ${e}`);
++    return false;
++  }
++};
++
++/** Set the target gain (dB). Safe to call at any time. */
++export const setGainDb = (db: number, opts?: { immediate?: boolean }) => {
++  if (!Number.isFinite(db)) return false;
++  desiredGainDb = db;
++  return applyGain(opts);
++};
++
++/** A/B switch: keep the measurement, output the original audio. */
++export const setBypass = (v: boolean) => {
++  const next = !!v;
++  if (next === bypass) return bypass;
++  bypass = next;
++  applyGain();
++  logger.info(
++    `[loudness] bypass ${bypass ? 'on' : 'off'} ` +
++      `(normalization remembers ${desiredGainDb.toFixed(2)}dB)`,
++  );
++  return bypass;
++};
++
++export const getBypass = () => bypass;
++export const getMode = () => mode;
++export const getAppliedGainDb = () => appliedGainDb;
++export const getDesiredGainDb = () => desiredGainDb;
++export const getGainValue = () => (normGain ? normGain.gain.value : null);
++export const getContextState = () => (ctx ? ctx.state : null);
++
++export default {
++  attach,
++  enterVolumeMode,
++  setGainDb,
++  setBypass,
++  getBypass,
++  getMode,
++  getAppliedGainDb,
++  getDesiredGainDb,
++  getGainValue,
++  getContextState,
++  isWritingVolume,
++};
+diff --git a/src/utils/audio/loudness/normalizeClient.ts b/src/utils/audio/loudness/normalizeClient.ts
+new file mode 100644
+index 0000000..894dce7
+--- /dev/null
++++ b/src/utils/audio/loudness/normalizeClient.ts
+@@ -0,0 +1,441 @@
++/* ================================================================
++ * normalizeClient.ts — orchestration: cache -> measure -> plan -> apply.
++ *
++ * Flow per track:
++ *   1. resolveForPlayback() runs *synchronously* right before the player
++ *      assigns the new src, so a cached gain is already in place when the
++ *      first sample of the new track is heard (no volume jump on switch).
++ *   2. normalizeSong() measures in the background (never blocking playback)
++ *      and ramps to the final gain once the number is in.
++ *
++ * The gain is one constant per track; nothing here compresses or limits, so
++ * the internal dynamics of a track survive untouched.
++ * ================================================================ */
++import { logger } from '@utils/Logger';
++import {
++  clearStoredMeasurements,
++  getStoredMeasurement,
++  storeMeasurement,
++} from '@utils/db/loudnessStorage';
++
++import {
++  CUSTOM_PROFILE_KEY,
++  DEFAULT_PROFILE_KEY,
++  REFINE_MIN_DELTA_DB,
++  getProfile,
++  isBiliCdnUrl,
++} from './config';
++import { measureStreamLoudnessWithFFmpeg } from './ffmpegEngine';
++import { planGain } from './gainPlanner';
++import loudnessEngine from './loudnessEngine';
++import {
++  GainProfile,
++  GainPlan,
++  LoudnessEngineKind,
++  LoudnessEngineOption,
++  LoudnessMeasurement,
++  LoudnessStatus,
++} from './types';
++
++export interface LoudnessSetting {
++  enabled: boolean;
++  profile: GainProfile;
++  engine: LoudnessEngineOption;
++  bypass: boolean;
++  prefetchNext: boolean;
++}
++
++export interface NormalizeOptions {
++  song: NoxMedia.Song;
++  /** the already resolved stream url, when the caller has it */
++  url?: string;
++  /** lazy resolver, used by prefetch and the ffmpeg engine */
++  getSource?: () => Promise<NoxNetwork.ParsedNoxMediaURL>;
++  playerSetting?: Partial<NoxStorage.PlayerSettingDict>;
++  /** the <audio> element currently playing */
++  mediaElement?: HTMLAudioElement | null;
++  /** measure + cache only (next track prefetch): never touches the output */
++  prefetchOnly?: boolean;
++}
++
++/* ------------------------------------------------------------- settings */
++
++export const resolveLoudnessSetting = (
++  playerSetting?: Partial<NoxStorage.PlayerSettingDict>,
++): LoudnessSetting => {
++  const profileKey = playerSetting?.loudnessProfile ?? DEFAULT_PROFILE_KEY;
++  // the sliders only drive the `custom` row; presets keep their own numbers
++  const overrides: Partial<GainProfile> = {};
++  if (profileKey === CUSTOM_PROFILE_KEY) {
++    if (Number.isFinite(playerSetting?.loudnessTargetLufs)) {
++      overrides.targetLufs = playerSetting?.loudnessTargetLufs;
++    }
++    if (Number.isFinite(playerSetting?.loudnessMaxBoostDb)) {
++      overrides.maxBoostDb = playerSetting?.loudnessMaxBoostDb;
++    }
++    if (Number.isFinite(playerSetting?.loudnessMinGainDb)) {
++      overrides.minGainDb = playerSetting?.loudnessMinGainDb;
++    }
++  }
++  const profile = getProfile(profileKey, overrides);
++  return {
++    enabled: playerSetting?.loudnessNormalize === true,
++    profile,
++    engine: playerSetting?.loudnessEngine ?? 'auto',
++    bypass: playerSetting?.loudnessBypass === true,
++    prefetchNext: playerSetting?.loudnessPrefetchNext !== false,
++  };
++};
++
++/* --------------------------------------------------------------- status */
++
++type StatusListener = (status: LoudnessStatus) => void;
++
++const statusListeners = new Set<StatusListener>();
++let lastStatus: LoudnessStatus = {
++  songId: '',
++  name: '',
++  stage: 'idle',
++  mode: 'off',
++  at: 0,
++};
++
++export const subscribeStatus = (listener: StatusListener) => {
++  statusListeners.add(listener);
++  listener(lastStatus);
++  return () => {
++    statusListeners.delete(listener);
++  };
++};
++
++export const getLastStatus = () => lastStatus;
++
++const emitStatus = (
++  patch: Partial<LoudnessStatus> & { stage: LoudnessStatus['stage'] },
++) => {
++  lastStatus = {
++    songId: patch.songId ?? '',
++    name: patch.name ?? '',
++    at: Date.now(),
++    mode: loudnessEngine.getMode(),
++    ...patch,
++  };
++  statusListeners.forEach((listener) => listener(lastStatus));
++  return lastStatus;
++};
++
++/* ---------------------------------------------------------------- cache */
++
++const memCache = new Map<string, LoudnessMeasurement>();
++const inFlight = new Map<string, Promise<LoudnessMeasurement>>();
++
++const rememberMeasurement = (
++  songId: string,
++  measurement: LoudnessMeasurement,
++) => {
++  memCache.set(songId, measurement);
++  storeMeasurement(songId, measurement);
++};
++
++/* --------------------------------------------------------------- engine */
++
++const pickEngine = (
++  setting: LoudnessSetting,
++  url?: string,
++): LoudnessEngineKind => {
++  if (setting.engine === 'ffmpeg') return 'ffmpeg';
++  if (setting.engine === 'sidx') return 'sidx';
++  return isBiliCdnUrl(url) ? 'sidx' : 'ffmpeg';
++};
++
++interface MeasureHooks {
++  onPartial?: (measurement: LoudnessMeasurement) => void;
++  onStage?: (stage: string) => void;
++}
++
++const measureStream = async (
++  kind: LoudnessEngineKind,
++  url: string,
++  setting: LoudnessSetting,
++  hooks?: MeasureHooks,
++): Promise<LoudnessMeasurement> => {
++  if (kind === 'ffmpeg') return measureStreamLoudnessWithFFmpeg(url);
++
++  // lazy import: keeps the sampler (and its OfflineAudioContext) out of the
++  // path when the user picked the ffmpeg engine
++  const { sampleStreamLoudness } = await import('./sampler');
++  try {
++    return await sampleStreamLoudness(url, {
++      onPartial: hooks?.onPartial,
++      onStage: hooks?.onStage,
++    });
++  } catch (e) {
++    if (setting.engine !== 'auto') throw e;
++    logger.notice(
++      `[loudness] sampling failed (${e}); falling back to the ffmpeg engine`,
++    );
++    return measureStreamLoudnessWithFFmpeg(url);
++  }
++};
++
++const resolveUrl = async (
++  opts: NormalizeOptions,
++): Promise<string | undefined> => {
++  if (opts.url) return opts.url;
++  if (!opts.getSource) return undefined;
++  const resolved = await opts.getSource();
++  return resolved?.url;
++};
++
++/** measure (or read from cache) the integrated loudness of a track */
++const getMeasurement = async (
++  opts: NormalizeOptions,
++  setting: LoudnessSetting,
++  hooks?: MeasureHooks,
++): Promise<{ measurement: LoudnessMeasurement; fromCache: boolean }> => {
++  const songId = opts.song.id;
++
++  const cached = memCache.get(songId);
++  if (cached) return { measurement: cached, fromCache: true };
++
++  const running = inFlight.get(songId);
++  if (running) return { measurement: await running, fromCache: true };
++
++  const task = (async () => {
++    const stored = await getStoredMeasurement(songId);
++    if (stored) {
++      memCache.set(songId, stored);
++      return stored;
++    }
++
++    const url = await resolveUrl(opts);
++    if (!url) throw new Error('no stream url to measure');
++
++    const kind = pickEngine(setting, url);
++    hooks?.onStage?.(kind === 'sidx' ? 'sampling' : 'ffmpeg');
++    const measurement = await measureStream(kind, url, setting, hooks);
++    rememberMeasurement(songId, measurement);
++    return measurement;
++  })();
++
++  inFlight.set(songId, task);
++  try {
++    return { measurement: await task, fromCache: false };
++  } finally {
++    inFlight.delete(songId);
++  }
++};
++
++/* ------------------------------------------------------------ applying */
++
++const applyPlan = (
++  plan: GainPlan,
++  opts?: { immediate?: boolean; force?: boolean },
++) => {
++  const current = loudnessEngine.getDesiredGainDb();
++  if (!opts?.force && Math.abs(plan.gainDb - current) < 0.01) return false;
++  loudnessEngine.setGainDb(plan.gainDb, { immediate: opts?.immediate });
++  return true;
++};
++
++const attachElement = (el?: HTMLAudioElement | null) => {
++  if (!el) return;
++  // attach() only awaits when the context still has to resume, so a running
++  // context takes the element over synchronously, before playback starts.
++  loudnessEngine
++    .attach(el)
++    .then((ok) => {
++      if (!ok) loudnessEngine.enterVolumeMode(el);
++      return undefined;
++    })
++    .catch(() => undefined);
++};
++
++/**
++ * Synchronous preparation, called from `musicSrcParser` before the player
++ * assigns the new src:
++ *   - takes the element over (or falls back to volume attenuation)
++ *   - puts the new track's gain in place *before* it is audible
++ *   - marks B站 CDN streams as CORS enabled, required for the audio graph
++ */
++export const resolveForPlayback = (opts: NormalizeOptions) => {
++  const setting = resolveLoudnessSetting(opts.playerSetting);
++  const songId = opts.song.id;
++  const el = opts.mediaElement;
++
++  if (!setting.enabled) {
++    loudnessEngine.setGainDb(0, { immediate: true });
++    return emitStatus({
++      songId,
++      name: opts.song.name,
++      stage: 'skipped',
++      reason: 'loudness normalization disabled',
++    });
++  }
++
++  loudnessEngine.setBypass(setting.bypass);
++
++  if (
++    el &&
++    opts.url &&
++    isBiliCdnUrl(opts.url) &&
++    el.crossOrigin !== 'anonymous'
++  ) {
++    // verified: the B站 CDNs answer with `Access-Control-Allow-Origin: *`
++    el.crossOrigin = 'anonymous';
++  }
++
++  const cached = memCache.get(songId);
++  if (cached) {
++    const plan = planGain(cached, setting.profile);
++    applyPlan(plan, { immediate: true, force: true });
++    attachElement(el);
++    emitStatus({
++      songId,
++      name: opts.song.name,
++      stage: 'cache-hit',
++      engine: cached.engine,
++      measuredLufs: cached.measuredLufs,
++      truePeakDb: cached.truePeakDb ?? undefined,
++      targetLufs: plan.targetLufs,
++      gainDb: plan.gainDb,
++      segments: cached.segments,
++      reason: plan.limitReason ?? undefined,
++    });
++  } else {
++    // start from the original audio: a wrong gain is worse than no gain
++    loudnessEngine.setGainDb(0, { immediate: true });
++    attachElement(el);
++  }
++
++  return lastStatus;
++};
++
++/** Measure (or read the cache) and ramp to the fixed gain. */
++export const normalizeSong = async (opts: NormalizeOptions) => {
++  const setting = resolveLoudnessSetting(opts.playerSetting);
++  const songId = opts.song.id;
++
++  if (opts.prefetchOnly) {
++    // silent warm-up of the next track: measure + cache, never touch output
++    if (!setting.enabled) return lastStatus;
++    try {
++      await getMeasurement(opts, setting);
++    } catch (e) {
++      logger.debug(`[loudness] prefetch skipped for ${songId}: ${e}`);
++    }
++    return lastStatus;
++  }
++
++  if (!setting.enabled) {
++    return emitStatus({
++      songId,
++      name: opts.song.name,
++      stage: 'skipped',
++      reason: 'loudness normalization disabled',
++    });
++  }
++
++  try {
++    const { measurement, fromCache } = await getMeasurement(opts, setting, {
++      onPartial: (partial) => {
++        // progressive landing: land early, re-land only on a real change
++        const partialPlan = planGain(partial, setting.profile);
++        const current = loudnessEngine.getDesiredGainDb();
++        if (Math.abs(partialPlan.gainDb - current) < REFINE_MIN_DELTA_DB)
++          return;
++        applyPlan(partialPlan, { force: true });
++        emitStatus({
++          songId,
++          name: opts.song.name,
++          stage: 'applied',
++          engine: partial.engine,
++          measuredLufs: partial.measuredLufs,
++          truePeakDb: partial.truePeakDb ?? undefined,
++          targetLufs: partialPlan.targetLufs,
++          gainDb: partialPlan.gainDb,
++          segments: partial.segments,
++          reason: 'provisional (first batch)',
++        });
++      },
++    });
++
++    const plan = planGain(measurement, setting.profile);
++    applyPlan(plan, { force: true });
++    logger.info(
++      `[loudness] ${opts.song.name || songId}: ${measurement.measuredLufs} LUFS ` +
++        `-> target ${plan.targetLufs} LUFS, gain ${plan.gainDb}dB ` +
++        `(${measurement.engine}${fromCache ? ', cache' : ''})`,
++    );
++    return emitStatus({
++      songId,
++      name: opts.song.name,
++      stage: fromCache ? 'cache-hit' : 'applied',
++      engine: measurement.engine,
++      measuredLufs: measurement.measuredLufs,
++      truePeakDb: measurement.truePeakDb ?? undefined,
++      targetLufs: plan.targetLufs,
++      gainDb: plan.gainDb,
++      segments: measurement.segments,
++      reason: plan.limitReason ?? undefined,
++    });
++  } catch (e) {
++    logger.notice(`[loudness] measurement failed for ${songId}: ${e}`);
++    return emitStatus({
++      songId,
++      name: opts.song.name,
++      stage: 'failed',
++      mode: loudnessEngine.getMode(),
++      reason: String(e),
++    });
++  }
++};
++
++/** Measure the next track while the current one plays (keeps switches seamless). */
++export const prefetchSong = (opts: Omit<NormalizeOptions, 'prefetchOnly'>) =>
++  normalizeSong({ ...opts, prefetchOnly: true });
++
++/** Drop every cached measurement (memory + database). */
++export const clearLoudnessCache = async () => {
++  memCache.clear();
++  const ok = await clearStoredMeasurements();
++  emitStatus({
++    songId: '',
++    name: '',
++    stage: 'idle',
++    reason: ok ? 'cache cleared' : 'cache clear failed',
++  });
++  return ok;
++};
++
++/**
++ * True while the fallback mode writes `element.volume`. The player persists
++ * every volumechange as the user's default volume, which must not pick up our
++ * normalization write.
++ */
++export const isWritingVolume = () => loudnessEngine.isWritingVolume();
++
++const api = {
++  resolveForPlayback,
++  normalizeSong,
++  prefetchSong,
++  clearLoudnessCache,
++  resolveLoudnessSetting,
++  subscribeStatus,
++  getLastStatus,
++  isWritingVolume,
++  /** the Web Audio side: getGainValue(), getMode(), setBypass(), … */
++  engine: loudnessEngine,
++};
++
++/**
++ * Debug handle, in the spirit of the userscript's `__biliLoudness`: from the
++ * player page's devtools console you can inspect what normalization decided:
++ *
++ *   noxLoudness.getLastStatus()          // last track: LUFS, gain, mode, …
++ *   noxLoudness.engine.getGainValue()    // the linear gain actually applied
++ *   noxLoudness.engine.setBypass(true)   // A/B without touching the settings
++ */
++(globalThis as unknown as { noxLoudness?: typeof api }).noxLoudness = api;
++
++export default api;
+diff --git a/src/utils/audio/loudness/sampler.ts b/src/utils/audio/loudness/sampler.ts
+new file mode 100644
+index 0000000..29546e6
+--- /dev/null
++++ b/src/utils/audio/loudness/sampler.ts
+@@ -0,0 +1,386 @@
++/* ================================================================
++ * sampler.ts — Range sampling + fragment decoding.
++ *
++ * Ported from Bilibili_LoudNorm/src/sampler.js (MIT, (c) 2026 Moxia9527),
++ * with the userscript specific `GM_xmlhttpRequest` fallback dropped: an
++ * extension page with host permissions can fetch the CDN directly.
++ *
++ * Why sampling instead of downloading the whole file: B站 audio is a single
++ * fMP4 with a sidx index, so ~0.5MB of evenly spread 5s fragments (~60s of
++ * audio, <1% of a long video) reproduces the integrated loudness of the whole
++ * track closely enough to level playlists.
++ *
++ * Decoding rules learned the hard way:
++ *   - `init` (ftyp+moov) + exactly ONE moof segment per decode call. Gluing
++ *     several moofs together makes the decoder emit only the first one
++ *     (measured: 57.3s of samples decoded to 4.9s, 2.9 LU off).
++ * ================================================================ */
++import { logger } from '@utils/Logger';
++
++import {
++  DECODE_SAMPLE_RATE,
++  FETCH_TIMEOUT_MS,
++  FIRST_BATCH_EAGER_AT,
++  FIRST_BATCH_SEGMENTS,
++  HEAD_WINDOW_BYTES,
++  MIN_SEGMENTS_TO_PROCEED,
++  REQUEST_GAP_MS,
++  SAMPLE_SEGMENTS,
++  SEGMENT_CONCURRENCY,
++  SEGMENT_RETRY,
++  SEGMENT_RETRY_DELAY_MS,
++  SEGMENT_TIMEOUT_MS,
++} from './config';
++import { concatPcm, measureLoudness } from './bs1770';
++import {
++  findBox,
++  parseSidx,
++  pickCoarse,
++  pickEvenly,
++  startsWithBox,
++  verifySidx,
++} from './sidx';
++import { LoudnessMeasurement, PcmChannels, SidxRef } from './types';
++
++export interface SampleOptions {
++  sampleSegments?: number;
++  firstBatch?: number;
++  eagerAt?: number;
++  concurrency?: number;
++  mimeType?: string;
++  signal?: AbortSignal;
++  /** fired once as soon as the first batch is in (progressive landing) */
++  onPartial?: (measurement: LoudnessMeasurement) => void;
++  onStage?: (stage: string) => void;
++}
++
++const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
++
++/** Yield to the event loop; keeps the player UI smooth during the math. */
++export const yieldToEventLoop = () =>
++  new Promise<void>((resolve) => {
++    setTimeout(resolve, 0);
++  });
++
++interface RangeResponse {
++  bytes: ArrayBuffer;
++  /** total file size from Content-Range, when the server reports it */
++  totalBytes: number | null;
++}
++
++/** One Range request with timeout + retry. */
++const fetchRangeWithMeta = async (
++  url: string,
++  start: number,
++  end: number,
++  opts?: { timeoutMs?: number; retries?: number; signal?: AbortSignal },
++): Promise<RangeResponse> => {
++  const budget = opts?.timeoutMs ?? FETCH_TIMEOUT_MS;
++  const maxTries = 1 + (opts?.retries ?? 0);
++  const rangeValue = `bytes=${start}-${end}`;
++
++  let lastError: unknown = null;
++  for (let attempt = 0; attempt < maxTries; attempt += 1) {
++    const controller = new AbortController();
++    const timer = setTimeout(() => controller.abort(), budget);
++    const onOuterAbort = () => controller.abort();
++    opts?.signal?.addEventListener('abort', onOuterAbort);
++    try {
++      // eslint-disable-next-line no-await-in-loop
++      const res = await fetch(url, {
++        headers: { Range: rangeValue },
++        signal: controller.signal,
++      });
++      if (res.status !== 206 && !res.ok) {
++        throw new Error(`HTTP ${res.status} for ${rangeValue}`);
++      }
++      const contentRange = res.headers.get('Content-Range');
++      const totalBytes = contentRange
++        ? Number(contentRange.split('/')[1]) || null
++        : null;
++      // eslint-disable-next-line no-await-in-loop
++      const bytes = await res.arrayBuffer();
++      return { bytes, totalBytes };
++    } catch (e) {
++      lastError = e;
++      if (opts?.signal?.aborted) throw e;
++      if (attempt + 1 < maxTries) {
++        // eslint-disable-next-line no-await-in-loop
++        await sleep(SEGMENT_RETRY_DELAY_MS);
++      }
++    } finally {
++      clearTimeout(timer);
++      opts?.signal?.removeEventListener('abort', onOuterAbort);
++    }
++  }
++  throw lastError ?? new Error('fetchRange failed');
++};
++
++export const fetchRange = async (
++  url: string,
++  start: number,
++  end: number,
++  opts?: { timeoutMs?: number; retries?: number; signal?: AbortSignal },
++) => (await fetchRangeWithMeta(url, start, end, opts)).bytes;
++
++/**
++ * Bounded concurrency with a minimum gap between request starts, so a fast
++ * CDN does not trip B站's frequency control.
++ */
++const pacedPool = async <T>(
++  items: T[],
++  limit: number,
++  worker: (item: T, index: number) => Promise<void>,
++) => {
++  let next = 0;
++  let lastStart = 0;
++  const runners: Promise<void>[] = [];
++  const n = Math.max(1, Math.min(limit, items.length || 1));
++
++  const runner = async () => {
++    for (;;) {
++      const index = next;
++      next += 1;
++      if (index >= items.length) return;
++
++      const wait = lastStart + REQUEST_GAP_MS - Date.now();
++      if (wait > 0) {
++        // eslint-disable-next-line no-await-in-loop
++        await sleep(wait);
++      }
++      lastStart = Date.now();
++      // eslint-disable-next-line no-await-in-loop
++      await worker(items[index], index);
++    }
++  };
++
++  for (let i = 0; i < n; i += 1) runners.push(runner());
++  await Promise.all(runners);
++};
++
++/** A decode-only context; offline so it never touches the audible output. */
++let decodeContext: BaseAudioContext | null = null;
++const getDecodeContext = (): BaseAudioContext => {
++  if (decodeContext) return decodeContext;
++  const OfflineCtor =
++    globalThis.OfflineAudioContext ||
++    (globalThis as { webkitOfflineAudioContext?: typeof OfflineAudioContext })
++      .webkitOfflineAudioContext;
++  if (!OfflineCtor) throw new Error('OfflineAudioContext unavailable');
++  decodeContext = new OfflineCtor(1, 1, DECODE_SAMPLE_RATE);
++  return decodeContext;
++};
++
++/** Decode `init + one segment` into plain PCM channels. */
++export const decodeFragment = async (
++  init: ArrayBuffer,
++  segment: ArrayBuffer,
++  mimeType = 'audio/mp4',
++): Promise<PcmChannels> => {
++  const blob = new Blob([init, segment], { type: mimeType });
++  const bytes = await blob.arrayBuffer();
++  const audioBuffer = await getDecodeContext().decodeAudioData(bytes);
++  const channels: Float32Array[] = [];
++  for (let c = 0; c < audioBuffer.numberOfChannels; c += 1) {
++    // copy: the AudioBuffer view is only valid while the buffer is alive
++    channels.push(new Float32Array(audioBuffer.getChannelData(c)));
++  }
++  return { channels, sampleRate: audioBuffer.sampleRate };
++};
++
++export interface SidxHead {
++  /** init segment (ftyp+moov), everything before the sidx box */
++  init: ArrayBuffer;
++  /** absolute offset right after the sidx box (the `first_offset` anchor) */
++  anchor: number;
++  refs: SidxRef[];
++  /** file size reported by the CDN, when available */
++  totalBytes: number | null;
++}
++
++/**
++ * Fetch just enough of the file to locate and parse the sidx index.
++ * The head window normally covers it; long tracks (16KB+ index) need a second
++ * Range request, which is cheap.
++ */
++export const fetchSidxHead = async (
++  url: string,
++  opts?: { signal?: AbortSignal },
++): Promise<SidxHead> => {
++  const head = await fetchRangeWithMeta(url, 0, HEAD_WINDOW_BYTES - 1, {
++    signal: opts?.signal,
++  });
++
++  const header = findBox(head.bytes, 'sidx');
++  if (!header) throw new Error('no sidx box in the head window');
++
++  let buffer = head.bytes;
++  const sidxEnd = header.offset + header.size;
++  if (sidxEnd > head.bytes.byteLength) {
++    const rest = await fetchRangeWithMeta(
++      url,
++      head.bytes.byteLength,
++      sidxEnd - 1,
++      {
++        signal: opts?.signal,
++      },
++    );
++    const merged = new Uint8Array(sidxEnd);
++    merged.set(new Uint8Array(head.bytes), 0);
++    merged.set(new Uint8Array(rest.bytes), head.bytes.byteLength);
++    buffer = merged.buffer;
++  }
++
++  const anchor = sidxEnd;
++  const parsed = parseSidx(buffer, anchor);
++  if (!parsed || !parsed.refs.length) {
++    throw new Error('sidx parsed to zero references');
++  }
++
++  const check = verifySidx(parsed, head.totalBytes ?? undefined);
++  if (check.ok === false) {
++    logger.notice(
++      `[loudness] index self check failed: computed ${check.endOffset} vs ` +
++        `content-length ${check.contentLength} (diff ${check.diff})`,
++    );
++  }
++
++  return {
++    init: buffer.slice(0, header.offset),
++    anchor,
++    refs: parsed.refs,
++    totalBytes: head.totalBytes,
++  };
++};
++
++/**
++ * Measure the integrated loudness of a stream by sampling it.
++ *
++ * @param url resolved audio URL (only needs Range support)
++ */
++export const sampleStreamLoudness = async (
++  url: string,
++  opts?: SampleOptions,
++): Promise<LoudnessMeasurement> => {
++  const started = Date.now();
++  const stage = opts?.onStage ?? (() => undefined);
++  const wantSegments = opts?.sampleSegments ?? SAMPLE_SEGMENTS;
++  const firstBatch = opts?.firstBatch ?? FIRST_BATCH_SEGMENTS;
++  const eagerAt = opts?.eagerAt ?? FIRST_BATCH_EAGER_AT;
++  const mimeType = opts?.mimeType ?? 'audio/mp4';
++
++  stage('index');
++  const { init, refs, anchor, totalBytes } = await fetchSidxHead(url, {
++    signal: opts?.signal,
++  });
++  logger.debug(
++    `[loudness] sidx: ${refs.length} refs of ${refs[0]?.duration.toFixed(2)}s, ` +
++      `anchor ${anchor}, head window ${HEAD_WINDOW_BYTES / 1024}KiB, ` +
++      `total ${totalBytes ?? 'unknown'}`,
++  );
++
++  const picks = pickEvenly(refs, wantSegments);
++  const coarse = pickCoarse(picks, firstBatch);
++  const rest = picks.filter((i) => !coarse.includes(i));
++
++  const parts: PcmChannels[] = [];
++  const pending: Promise<void>[] = [];
++  let partialSent = false;
++
++  const measureNow = async (): Promise<LoudnessMeasurement | null> => {
++    const pcm = concatPcm(parts);
++    if (!pcm || !pcm.channels.length || !pcm.channels[0].length) return null;
++    const core = await measureLoudness(pcm, { onYield: yieldToEventLoop });
++    if (core.lufs === null) return null;
++    return {
++      measuredLufs: core.lufs,
++      truePeakDb: core.truePeakDb,
++      engine: 'sidx',
++      segments: parts.length,
++      elapsedMs: Date.now() - started,
++    };
++  };
++
++  let misalignedSegments = 0;
++  const decodeInto = async (index: number, bytes: ArrayBuffer) => {
++    // A wrong sidx anchor is the classic failure mode: every segment but the
++    // first points at garbage. Say so instead of failing silently.
++    if (!startsWithBox(bytes, 'moof')) {
++      misalignedSegments += 1;
++      if (misalignedSegments === 1) {
++        logger.notice(
++          `[loudness] segment ${index} does not start with a moof box - ` +
++            'the segment index may be misaligned',
++        );
++      }
++    }
++    try {
++      const pcm = await decodeFragment(init, bytes, mimeType);
++      parts.push(pcm);
++      if (!partialSent && parts.length >= eagerAt) {
++        partialSent = true;
++        const partial = await measureNow();
++        if (partial && opts?.onPartial) opts.onPartial(partial);
++      }
++    } catch (e) {
++      // one broken segment must not sink the whole measurement
++      logger.notice(`[loudness] segment ${index} decode failed: ${e}`);
++    }
++  };
++
++  const download = async (segmentIndexes: number[], label: string) => {
++    stage(label);
++    await pacedPool(
++      segmentIndexes,
++      opts?.concurrency ?? SEGMENT_CONCURRENCY,
++      async (index) => {
++        const ref = refs[index];
++        try {
++          const bytes = await fetchRange(
++            url,
++            ref.offset,
++            ref.offset + ref.size - 1,
++            {
++              timeoutMs: SEGMENT_TIMEOUT_MS,
++              retries: SEGMENT_RETRY,
++              signal: opts?.signal,
++            },
++          );
++          pending.push(decodeInto(index, bytes));
++        } catch (e) {
++          logger.notice(`[loudness] segment ${index} fetch failed: ${e}`);
++        }
++      },
++    );
++  };
++
++  await download(coarse, 'sample-first-batch');
++  await Promise.all(pending.splice(0));
++
++  if (parts.length < MIN_SEGMENTS_TO_PROCEED) {
++    throw new Error(
++      `not enough segments decoded (${parts.length}/${MIN_SEGMENTS_TO_PROCEED})`,
++    );
++  }
++
++  if (rest.length) {
++    await download(rest, 'sample-refine');
++    await Promise.all(pending.splice(0));
++  }
++
++  const final = await measureNow();
++  if (!final) throw new Error('loudness measurement produced no gated blocks');
++  logger.debug(
++    `[loudness] sampled ${final.segments} segments in ${final.elapsedMs}ms ` +
++      `-> ${final.measuredLufs} LUFS / ${final.truePeakDb} dBTP`,
++  );
++  return { ...final, elapsedMs: Date.now() - started };
++};
++
++export default {
++  sampleStreamLoudness,
++  fetchRange,
++  fetchSidxHead,
++  decodeFragment,
++  yieldToEventLoop,
++};
+diff --git a/src/utils/audio/loudness/sidx.ts b/src/utils/audio/loudness/sidx.ts
+new file mode 100644
+index 0000000..6a9bcaf
+--- /dev/null
++++ b/src/utils/audio/loudness/sidx.ts
+@@ -0,0 +1,242 @@
++/* ================================================================
++ * sidx.ts — fMP4 segment index parsing (pure functions, no side effects).
++ *
++ * Ported from Bilibili_LoudNorm/src/sidx.js (MIT, (c) 2026 Moxia9527).
++ *
++ * B站 audio is a single fMP4 file:
++ *     ftyp -> moov(with mvex/trex) -> sidx -> [moof+mdat] x N
++ *
++ * Reading a few KB of index is enough to know where every segment lives, so a
++ * whole track can be sampled without downloading it.
++ *
++ * Box layout (ISO/IEC 14496-12 8.16.3):
++ *   box header(8|16) + version(1) flags(3) reference_ID(4)
++ *   timescale(4) earliest_presentation_time(v0:4 / v1:8)
++ *   first_offset(v0:4 / v1:8) reserved(2) reference_count(2)
++ *   then reference_count entries of 12 bytes:
++ *     type(1bit) + referenced_size(31bit) | subsegment_duration(4) | SAP(4)
++ * ================================================================ */
++import { ParsedSidx, SidxRef } from './types';
++
++export interface BoxHeader {
++  type: string;
++  size: number;
++  headerSize: number;
++  offset: number;
++}
++
++const toView = (input: ArrayBuffer | Uint8Array | DataView) => {
++  if (input instanceof DataView) return input;
++  if (input instanceof Uint8Array) {
++    return new DataView(input.buffer, input.byteOffset, input.byteLength);
++  }
++  return new DataView(input);
++};
++
++/** Read one box header. Returns null when the offset is out of range. */
++export const readBoxHeader = (
++  view: DataView,
++  offset: number,
++): BoxHeader | null => {
++  if (offset + 8 > view.byteLength) return null;
++
++  const size32 = view.getUint32(offset);
++  const type = String.fromCharCode(
++    view.getUint8(offset + 4),
++    view.getUint8(offset + 5),
++    view.getUint8(offset + 6),
++    view.getUint8(offset + 7),
++  );
++
++  let size = size32;
++  let headerSize = 8;
++
++  if (size32 === 1) {
++    // largesize: 64 bit
++    const hi = view.getUint32(offset + 8);
++    const lo = view.getUint32(offset + 12);
++    size = hi * 4294967296 + lo;
++    headerSize = 16;
++  } else if (size32 === 0) {
++    // extends to the end of the buffer
++    size = view.byteLength - offset;
++  }
++
++  if (size < headerSize) return null;
++  return { type, size, headerSize, offset };
++};
++
++/** Walk the top level boxes, returning the first box with the given type. */
++export const findBox = (
++  input: ArrayBuffer | Uint8Array | DataView,
++  type: string,
++): BoxHeader | null => {
++  const view = toView(input);
++  let off = 0;
++  let guard = 0;
++  while (off + 8 <= view.byteLength && guard < 64) {
++    guard += 1;
++    const header = readBoxHeader(view, off);
++    if (!header) return null;
++    if (header.type === type) return header;
++    off += header.size;
++  }
++  return null;
++};
++
++/** true when the bytes start with the given box type (self check helper). */
++export const startsWithBox = (
++  input: ArrayBuffer | Uint8Array | DataView,
++  type: string,
++): boolean => {
++  if (!input) return false;
++  const view = toView(input);
++  if (view.byteLength < 8) return false;
++  const actual = String.fromCharCode(
++    view.getUint8(4),
++    view.getUint8(5),
++    view.getUint8(6),
++    view.getUint8(7),
++  );
++  return actual === type;
++};
++
++/**
++ * Parse a sidx box.
++ *
++ * `anchor` is critical: ISO/IEC 14496-12 defines `first_offset` relative to
++ * the byte right after the sidx box, not to the start of the file. Parsing
++ * with anchor=0 shifts every segment by `ftyp+moov+sidx`, which shows up as
++ * "only segment 0 decodes".
++ *
++ * @param input bytes starting at the sidx box
++ * @param anchor absolute byte offset right after the sidx box
++ */
++export const parseSidx = (
++  input: ArrayBuffer | Uint8Array | DataView,
++  anchor: number,
++): ParsedSidx | null => {
++  if (!input) return null;
++  const base = Number.isFinite(anchor) ? anchor : 0;
++  const view = toView(input);
++
++  const found = findBox(view, 'sidx');
++  if (!found) return null;
++
++  let p = found.offset + found.headerSize;
++
++  const version = view.getUint8(p);
++  p += 4; // version(1) + flags(3)
++  p += 4; // reference_ID
++
++  const timescale = view.getUint32(p);
++  p += 4;
++  if (!timescale) return null;
++
++  let earliest: number;
++  let firstOffset: number;
++  if (version === 1) {
++    earliest = view.getUint32(p) * 4294967296 + view.getUint32(p + 4);
++    p += 8;
++    firstOffset = view.getUint32(p) * 4294967296 + view.getUint32(p + 4);
++    p += 8;
++  } else {
++    earliest = view.getUint32(p);
++    p += 4;
++    firstOffset = view.getUint32(p);
++    p += 4;
++  }
++
++  p += 2; // reserved
++  const count = view.getUint16(p);
++  p += 2;
++
++  const refs: SidxRef[] = [];
++  let cursor = base + firstOffset;
++  let t = earliest;
++
++  for (let i = 0; i < count; i += 1) {
++    if (p + 12 > view.byteLength) break;
++    const sizeWithType = view.getUint32(p);
++    const size = sizeWithType & 0x7fffffff; // low 31 bits
++    const duration = view.getUint32(p + 4);
++    p += 12;
++
++    refs.push({
++      index: i,
++      t: t / timescale,
++      duration: duration / timescale,
++      size,
++      offset: cursor,
++    });
++
++    cursor += size;
++    t += duration;
++  }
++
++  return {
++    version,
++    timescale,
++    earliestPresentationTime: earliest / timescale,
++    firstOffset,
++    anchor: base,
++    refs,
++    endOffset: cursor,
++  };
++};
++
++/**
++ * Self check: anchor + firstOffset + sum(refs.size) must equal the file size
++ * (true for every B站 audio file measured so far).
++ */
++export const verifySidx = (
++  parsed: ParsedSidx | null,
++  contentLength?: number,
++) => {
++  if (!parsed || !Number.isFinite(contentLength)) {
++    return { ok: null as boolean | null, reason: 'no-data' };
++  }
++  const diff = parsed.endOffset - (contentLength as number);
++  return { ok: diff === 0, endOffset: parsed.endOffset, contentLength, diff };
++};
++
++/** Pick `want` segments evenly spread over the track (the first one always). */
++export const pickEvenly = (refs: SidxRef[], want: number): number[] => {
++  const n = refs.length;
++  if (!n) return [];
++  if (n <= want) return refs.map((r) => r.index);
++  if (want <= 1) return [0];
++
++  const out: number[] = [];
++  for (let i = 0; i < want; i += 1) {
++    out.push(Math.round((i * (n - 1)) / (want - 1)));
++  }
++  return Array.from(new Set(out)).sort((a, b) => a - b);
++};
++
++/**
++ * Pick `k` entries out of an already evenly spread list, keeping both ends.
++ * Used for the progressive first batch so it still covers 0%-100% of the
++ * timeline instead of just the first few seconds.
++ */
++export const pickCoarse = (picks: number[], k: number): number[] => {
++  const n = picks.length;
++  if (!n || k <= 0) return [];
++  if (k >= n) return picks.slice();
++
++  const out: number[] = [];
++  for (let i = 0; i < k; i += 1) {
++    out.push(picks[Math.round((i * (n - 1)) / (k - 1))]);
++  }
++  return Array.from(new Set(out)).sort((a, b) => a - b);
++};
++
++export default {
++  readBoxHeader,
++  findBox,
++  startsWithBox,
++  parseSidx,
++  verifySidx,
++  pickEvenly,
++  pickCoarse,
++};
+diff --git a/src/utils/audio/loudness/types.ts b/src/utils/audio/loudness/types.ts
+new file mode 100644
+index 0000000..1fef4f3
+--- /dev/null
++++ b/src/utils/audio/loudness/types.ts
+@@ -0,0 +1,117 @@
++/* ================================================================
++ * Loudness normalization: shared types.
++ *
++ * The measurement math in this folder is a TypeScript port of
++ * Bilibili_LoudNorm (https://github.com/ADMA200/Bilibili_LoudNorm),
++ * MIT licensed, (c) 2026 Moxia9527. See THIRD-PARTY notices below.
++ *
++ * Design notes:
++ *   - `measuredLufs` (a property of the *track*) is cached, never the gain:
++ *     gain = profile.targetLufs - measuredLufs, so switching a profile
++ *     never needs a re-measurement.
++ *   - Everything here is a pure function of PCM data + config, which makes
++ *     the whole pipeline unit-testable outside of a browser.
++ * ================================================================ */
++
++/** Which backend produced a measurement. */
++export type LoudnessEngineKind = 'sidx' | 'ffmpeg';
++
++/** User selectable measurement strategy. */
++export type LoudnessEngineOption = 'auto' | 'sidx' | 'ffmpeg';
++
++/** One fMP4 subsegment taken from the sidx index. */
++export interface SidxRef {
++  /** index inside the sidx reference list */
++  index: number;
++  /** start time in seconds */
++  t: number;
++  /** duration in seconds */
++  duration: number;
++  /** byte size of the referenced media segment */
++  size: number;
++  /** absolute byte offset inside the media file */
++  offset: number;
++}
++
++/** Parsed sidx box (ISO/IEC 14496-12 8.16.3). */
++export interface ParsedSidx {
++  version: number;
++  timescale: number;
++  earliestPresentationTime: number;
++  firstOffset: number;
++  /** byte offset the `firstOffset` field is relative to (end of the sidx box) */
++  anchor: number;
++  refs: SidxRef[];
++  /** anchor + firstOffset + sum(refs.size): must equal Content-Length */
++  endOffset: number;
++}
++
++/** Raw decoded PCM: one Float32Array per channel. */
++export interface PcmChannels {
++  channels: Float32Array[];
++  sampleRate: number;
++}
++
++/** BS.1770-4 integrated loudness + true peak. */
++export interface LoudnessCore {
++  /** integrated loudness (LUFS), null when every block was gated out */
++  lufs: number | null;
++  /** true peak estimate (dBTP) */
++  truePeakDb: number;
++  blocks: number;
++  blocksAfterAbsGate: number;
++  blocksAfterRelGate: number;
++  frames: number;
++  sampleRate: number;
++  channels: number;
++}
++
++/** A cached, track level measurement. */
++export interface LoudnessMeasurement {
++  measuredLufs: number;
++  /** null when the backend could not report a peak (then no clipping budget) */
++  truePeakDb: number | null;
++  engine: LoudnessEngineKind;
++  /** how many sampled segments contributed (1 for ffmpeg, 0 when unknown) */
++  segments: number;
++  elapsedMs: number;
++}
++
++/** Gain profile / preset: the "loudness table" shown in the settings panel. */
++export interface GainProfile {
++  key: string;
++  label: string;
++  targetLufs: number;
++  maxBoostDb: number;
++  minGainDb: number;
++}
++
++/** Result of mapping a measurement onto a profile. */
++export interface GainPlan {
++  gainDb: number;
++  targetLufs: number;
++  rawGainDb: number | null;
++  limited: boolean;
++  limitReason: string | null;
++  ceilingHeadroom: number | null;
++  profileKey: string;
++}
++
++/** Everything the UI needs to explain what happened to the current track. */
++export interface LoudnessStatus {
++  songId: string;
++  name: string;
++  stage: 'idle' | 'cache-hit' | 'measuring' | 'applied' | 'failed' | 'skipped';
++  engine?: LoudnessEngineKind;
++  measuredLufs?: number;
++  truePeakDb?: number;
++  targetLufs?: number;
++  gainDb?: number;
++  segments?: number;
++  mode: LoudnessApplicationMode;
++  reason?: string;
++  at: number;
++}
++
++/** How the gain is actually being applied right now. */
++export type LoudnessApplicationMode = 'gain-node' | 'volume' | 'off';
+diff --git a/src/utils/db/loudnessStorage.ts b/src/utils/db/loudnessStorage.ts
+new file mode 100644
+index 0000000..9e72d05
+--- /dev/null
++++ b/src/utils/db/loudnessStorage.ts
+@@ -0,0 +1,96 @@
++/* ================================================================
++ * loudnessStorage.ts — pglite cache for loudness measurements.
++ *
++ * Every entry point swallows its errors: a cache (or a missing table, on an
++ * install that never ran the migration) must never break playback.
++ * ================================================================ */
++import { eq } from 'drizzle-orm';
++
++import { logger } from '@utils/Logger';
++import { LOUDNESS_ENGINE_VERSION } from '@utils/audio/loudness/config';
++import {
++  LoudnessEngineKind,
++  LoudnessMeasurement,
++} from '@utils/audio/loudness/types';
++
++import db from './sql';
++import loudnessTable from './schema/loudnessTable';
++
++export const getStoredMeasurement = async (
++  songcid: string,
++): Promise<LoudnessMeasurement | undefined> => {
++  if (!songcid) return undefined;
++  try {
++    const rows = await db
++      .select()
++      .from(loudnessTable)
++      .where(eq(loudnessTable.songcid, songcid));
++    const row = rows?.[0];
++    if (!row) return undefined;
++    // drop rows produced by an older version of the measurement math
++    if (row.engineVersion !== LOUDNESS_ENGINE_VERSION) return undefined;
++    if (row.measuredLufs === null || row.measuredLufs === undefined) {
++      return undefined;
++    }
++    return {
++      measuredLufs: row.measuredLufs,
++      truePeakDb: row.truePeakDb ?? null,
++      engine: (row.engine as LoudnessEngineKind) ?? 'sidx',
++      segments: row.segments ?? 0,
++      elapsedMs: 0,
++    };
++  } catch (e) {
++    logger.notice(`[loudness] cache read failed (${e}); will measure`);
++    return undefined;
++  }
++};
++
++export const storeMeasurement = async (
++  songcid: string,
++  measurement: LoudnessMeasurement,
++) => {
++  if (!songcid || !Number.isFinite(measurement.measuredLufs)) return;
++  const values = {
++    songcid,
++    measuredLufs: measurement.measuredLufs,
++    truePeakDb: measurement.truePeakDb,
++    engine: measurement.engine,
++    engineVersion: LOUDNESS_ENGINE_VERSION,
++    segments: measurement.segments,
++    updatedAt: Date.now(),
++  };
++  try {
++    await db.insert(loudnessTable).values(values).onConflictDoUpdate({
++      target: loudnessTable.songcid,
++      set: values,
++    });
++  } catch (e) {
++    logger.notice(`[loudness] cache write failed: ${e}`);
++  }
++};
++
++export const clearStoredMeasurements = async () => {
++  try {
++    await db.delete(loudnessTable);
++    return true;
++  } catch (e) {
++    logger.notice(`[loudness] cache clear failed: ${e}`);
++    return false;
++  }
++};
++
++export const countStoredMeasurements = async (): Promise<number> => {
++  try {
++    const rows = await db.select({ id: loudnessTable.id }).from(loudnessTable);
++    return rows?.length ?? 0;
++  } catch (e) {
++    return 0;
++  }
++};
++
++export default {
++  getStoredMeasurement,
++  storeMeasurement,
++  clearStoredMeasurements,
++  countStoredMeasurements,
++};
+diff --git a/src/utils/db/schema/loudnessTable.ts b/src/utils/db/schema/loudnessTable.ts
+new file mode 100644
+index 0000000..a007fd5
+--- /dev/null
++++ b/src/utils/db/schema/loudnessTable.ts
+@@ -0,0 +1,27 @@
++import { integer, pgTable, varchar, real } from 'drizzle-orm/pg-core';
++
++/**
++ * Cached loudness measurements, one row per song (= per cid).
++ *
++ * What gets cached is a property of the *track* (its integrated loudness and
++ * true peak), never the gain:
++ *     gain_dB = profile.targetLufs - measuredLufs
++ * so changing the target loudness or the preset never needs a re-measurement.
++ *
++ * Deliberately kept out of `r128gain-table`: those values come from ffmpeg's
++ * ReplayGain 2.0 filter (-18 LUFS reference) and are synced with the mobile
++ * app, while these are BS.1770-4 measurements. Mixing the two would silently
++ * corrupt both.
++ */
++const table = pgTable('loudness-table', {
++  id: integer().primaryKey().generatedAlwaysAsIdentity(),
++  songcid: varchar({ length: 255 }).unique().notNull(),
++  measuredLufs: real(),
++  truePeakDb: real(),
++  engine: varchar({ length: 16 }),
++  engineVersion: integer(),
++  segments: integer(),
++  updatedAt: real(),
++});
++
++export default table;
+diff --git a/src/utils/ffmpeg/ffmpeg.ts b/src/utils/ffmpeg/ffmpeg.ts
+index da62a13..6b55405 100644
+--- a/src/utils/ffmpeg/ffmpeg.ts
++++ b/src/utils/ffmpeg/ffmpeg.ts
+@@ -2,13 +2,33 @@ import { FFmpeg } from '@ffmpeg/ffmpeg';
+ import { fetchFile } from '@ffmpeg/util';
+ 
+ const ffmpeg = new FFmpeg();
++
++export interface ReplayGainResult {
++  /** ReplayGain 2.0 track gain in dB; positive means "boost". */
++  trackGainDb: number | null;
++  /** track peak as a linear amplitude (1.0 == full scale). */
++  trackPeakLinear: number | null;
++}
++
++/**
++ * ffmpeg is a single shared wasm instance, so it can only run one job at a
++ * time: every call is serialized through this queue and the log lines are
++ * captured into the run object that is currently active.
++ */
++let activeRun: ReplayGainResult | null = null;
++let runQueue: Promise<unknown> = Promise.resolve();
+ let r128gain = 0;
+ 
+ ffmpeg.on('log', ({ message }) => {
+   const parseTrackGain = /track_gain = ([-+]?\d+\.\d+) dB/.exec(message);
+   if (parseTrackGain !== null) {
+-    // eslint-disable-next-line prefer-destructuring
+-    r128gain = Number(parseTrackGain[1]!);
++    r128gain = Number(parseTrackGain[1]);
++    if (activeRun) activeRun.trackGainDb = r128gain;
++  }
++  // replaygain prints both ReplayGain 2.0 tags; track_peak is a linear ratio
++  const parseTrackPeak = /track_peak = ([\d.]+)/.exec(message);
++  if (parseTrackPeak !== null && activeRun) {
++    activeRun.trackPeakLinear = Number(parseTrackPeak[1]);
+   }
+   console.debug(message);
+ });
+@@ -17,7 +37,7 @@ await ffmpeg.load({
+   wasmURL: chrome.runtime.getURL('js/ffmpeg-core.wasm'),
+ });
+ 
+-export default async (url: string) => {
++const runReplayGain = async (url: string) => {
+   await ffmpeg.writeFile('temp.m4a', await fetchFile(url));
+   await ffmpeg.exec([
+     '-nostats',
+@@ -29,6 +49,32 @@ export default async (url: string) => {
+     'null',
+     '-',
+   ]);
+-  console.debug(`[r128gain] found r128gain: ${r128gain}`);
+-  return r128gain;
++  return { ...(activeRun as unknown as ReplayGainResult) };
++};
++
++/**
++ * Measure a stream with ffmpeg's ReplayGain 2.0 filter.
++ *
++ * NOTE: this downloads and decodes the *whole* file, which is why the
++ * sampled `sidx` engine is preferred for B站 sources. It stays available as a
++ * fallback and as an explicit user choice.
++ */
++export const measureReplayGain = (url: string): Promise<ReplayGainResult> => {
++  const run = runQueue.then(async () => {
++    activeRun = { trackGainDb: null, trackPeakLinear: null };
++    try {
++      return await runReplayGain(url);
++    } finally {
++      activeRun = null;
++    }
++  });
++  // keep the chain alive even when a run throws
++  runQueue = run.catch(() => undefined);
++  return run;
++};
++
++export default async (url: string) => {
++  const result = await measureReplayGain(url);
++  console.debug(`[r128gain] found r128gain: ${result.trackGainDb}`);
++  return result.trackGainDb ?? 0;
+ };
+diff --git a/src/utils/ffmpeg/r128util.ts b/src/utils/ffmpeg/r128util.ts
+index f2217e1..5c261f4 100644
+--- a/src/utils/ffmpeg/r128util.ts
++++ b/src/utils/ffmpeg/r128util.ts
+@@ -17,7 +17,16 @@ const getOrSetR128Gain = async ({
+     return r128gain2Volume(r128Val);
+   }
+   const source = await getSource(song);
+-  const val = source.loudness ? -source.loudness : await r128gain(source.url);
++  /*
++   * `loudness` is B站's own `target_i - measured_i`, i.e. the gain that still
++   * has to be applied (positive == boost), which is the same sign convention
++   * as ffmpeg's ReplayGain `track_gain` that `r128gain2Volume` expects.
++   * Negating it (as this used to) attenuates quiet tracks and leaves loud ones
++   * untouched - the exact opposite of the intent. Media streams resolved by
++   * the extension never carry the field (`data.volume` is null in the playurl
++   * response), so this only fixes the fallback path.
++   */
++  const val = source.loudness ?? (await r128gain(source.url));
+   await setR128Gain(song.id, val);
+   return r128gain2Volume(val);
+ };
