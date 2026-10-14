@@ -1,0 +1,114 @@
+diff --git a/src/components/setting/LoudnessSetting.tsx b/src/components/setting/LoudnessSetting.tsx
+index f847ae4..6d99554 100644
+--- a/src/components/setting/LoudnessSetting.tsx
++++ b/src/components/setting/LoudnessSetting.tsx
+@@ -18,6 +18,7 @@ import Select from '@mui/material/Select';
+ import Slider from '@mui/material/Slider';
+ import Tooltip from '@mui/material/Tooltip';
+ import Typography from '@mui/material/Typography';
++import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+ 
+ import { useNoxSetting } from '@APM/stores/useApp';
+ import {
+@@ -43,6 +44,25 @@ const STAGE_LABEL: Record<LoudnessStatus['stage'], string> = {
+   skipped: '未启用',
+ };
+ 
++const LABEL_STYLE: React.CSSProperties = {
++  display: 'inline-flex',
++  alignItems: 'center',
++  gap: 4,
++};
++
++const INFO_ICON_SX = { fontSize: 14, opacity: 0.5 };
++
++/** hover-only help texts, so the panel itself stays tidy */
++const EXCLUSIVE_HELP =
++  '保证只有一个响度系统在动音量：开启后播放器不再施加 B 站自带的响度增益、' +
++  '不再走 ffmpeg 全片测量、也不再使用旧的 r128gain（它会写元素音量）路径。' +
++  '若上面的「响度归一」也开着 → 只由它施加一个固定增益；' +
++  '若把「响度归一」关掉 → 音频完全原始直出（不测量、不改音量）。';
++
++const NORMALIZE_HELP =
++  '先量完整首/整段的集成响度，再对这一个视频施加一个常数增益；' +
++  '不做实时压缩，动态范围原样保留。首次播放要等一小会儿，之后走缓存。';
++
+ export default function LoudnessSetting() {
+   const playerSetting = useNoxSetting((state) => state.playerSetting);
+   const setPlayerSetting = useNoxSetting((state) => state.setPlayerSetting);
+@@ -59,39 +79,43 @@ export default function LoudnessSetting() {
+   return (
+     <Box sx={{ mt: 1, mb: 1 }}>
+       <Divider sx={{ mb: 1 }} />
+-      <FormControlLabel
+-        control={
+-          <Checkbox
+-            checked={exclusive}
+-            onChange={(e) =>
+-              setPlayerSetting({ loudnessExclusive: e.target.checked })
+-            }
+-          />
+-        }
+-        label='🔒 响度归一独占模式'
+-      />
+-      <Typography variant='caption' color='text.secondary'>
+-        保证只有一个响度系统在动音量：开启后播放器不再施加 B 站自带的响度增益、
+-        不再走 ffmpeg 全片测量、也不再使用下面那个旧的
+-        `r128gain`（会写音量）路径。 若上面的「响度归一」也开着 →
+-        只由它施加一个固定增益；若关掉 → 音频完全原始直出。
+-      </Typography>
++      {/* 说明收进悬停提示，让面板保持清爽；ℹ️ 提示"这里有说明" */}
++      <Tooltip title={EXCLUSIVE_HELP} placement='right' arrow enterDelay={300}>
++        <FormControlLabel
++          control={
++            <Checkbox
++              checked={exclusive}
++              onChange={(e) =>
++                setPlayerSetting({ loudnessExclusive: e.target.checked })
++              }
++            />
++          }
++          label={
++            <span style={LABEL_STYLE}>
++              🔒 响度归一独占模式 <InfoOutlinedIcon sx={INFO_ICON_SX} />
++            </span>
++          }
++        />
++      </Tooltip>
+ 
+-      <FormControlLabel
+-        control={
+-          <Checkbox
+-            checked={playerSetting.loudnessNormalize === true}
+-            onChange={(e) =>
+-              setPlayerSetting({ loudnessNormalize: e.target.checked })
+-            }
+-          />
+-        }
+-        label='响度归一（整段测量 + 固定增益）'
+-      />
+-      <Typography variant='caption' color='text.secondary'>
+-        先量完整首/整段的集成响度，再对这一个视频施加一个常数增益；
+-        不做实时压缩，动态范围原样保留。首次播放要等一小会儿，之后走缓存。
+-      </Typography>
++      <Tooltip title={NORMALIZE_HELP} placement='right' arrow enterDelay={300}>
++        <FormControlLabel
++          control={
++            <Checkbox
++              checked={playerSetting.loudnessNormalize === true}
++              onChange={(e) =>
++                setPlayerSetting({ loudnessNormalize: e.target.checked })
++              }
++            />
++          }
++          label={
++            <span style={LABEL_STYLE}>
++              响度归一（整段测量 + 固定增益）
++              <InfoOutlinedIcon sx={INFO_ICON_SX} />
++            </span>
++          }
++        />
++      </Tooltip>
+ 
+       <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', mt: 1 }}>
+         <FormControl size='small' sx={{ minWidth: 160 }}>

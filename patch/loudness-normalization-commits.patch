@@ -1,7 +1,7 @@
 From faef93a93d8f771cfe7de0b86db942d032a051af Mon Sep 17 00:00:00 2001
 From: loudness-agent <agent@example.com>
 Date: Tue, 13 Oct 2026 15:01:51 +0800
-Subject: [PATCH 1/9] feat(loudness): whole-track loudness normalization (one
+Subject: [PATCH 01/10] feat(loudness): whole-track loudness normalization (one
  fixed gain per track)
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
@@ -3383,7 +3383,7 @@ index f2217e1..5c261f4 100644
 From 49a8e199b23e6989d432a4b2b1e279ef64a65fa2 Mon Sep 17 00:00:00 2001
 From: loudness-agent <agent@example.com>
 Date: Tue, 13 Oct 2026 15:01:51 +0800
-Subject: [PATCH 2/9] test(loudness): add probe/loudness self checks + docs
+Subject: [PATCH 02/10] test(loudness): add probe/loudness self checks + docs
 
 `node probe/loudness/check.mjs` transpiles the loudness modules with the repo's
 own typescript and checks them without touching the network or the extension:
@@ -3846,7 +3846,7 @@ index 0000000..6899dc1
 From 31ec560aa28bcff34888970b44ef969ea0dc0b3e Mon Sep 17 00:00:00 2001
 From: loudness-agent <agent@example.com>
 Date: Tue, 13 Oct 2026 16:54:58 +0800
-Subject: [PATCH 3/9] chore(loudness): expose a noxLoudness debug handle
+Subject: [PATCH 03/10] chore(loudness): expose a noxLoudness debug handle
 
 Exposes the normalization API (status, gain value, bypass, engine mode) on the
 player page global, mirroring the userscript `__biliLoudness` handle, so that
@@ -3897,8 +3897,8 @@ index 59e4793..894dce7 100644
 From f4b3c4c5bf2788827d05fbb3f4f83852d688236f Mon Sep 17 00:00:00 2001
 From: loudness-agent <agent@example.com>
 Date: Tue, 13 Oct 2026 22:02:18 +0800
-Subject: [PATCH 4/9] feat(failover): retry a dead CDN mirror instead of never
- playing
+Subject: [PATCH 04/10] feat(failover): retry a dead CDN mirror instead of
+ never playing
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
@@ -4604,7 +4604,8 @@ index 0000000..f2f09e2
 From 6fefb8fc18087170d698f8b24ce4bf71ddab41ef Mon Sep 17 00:00:00 2001
 From: loudness-agent <agent@example.com>
 Date: Tue, 13 Oct 2026 22:04:35 +0800
-Subject: [PATCH 5/9] feat(covers): retry a cover image on another hdslb shard
+Subject: [PATCH 05/10] feat(covers): retry a cover image on another hdslb
+ shard
 
 i0/i1/i2.hdslb.com are replicas of the same object store (verified: the same
 /bfs/archive/*.jpg returns byte-identical content from all three), yet a single
@@ -4711,7 +4712,7 @@ index 0000000..f616ba1
 From 3b3a89a05d1a716c5f1405541ecf0a56834dddad Mon Sep 17 00:00:00 2001
 From: loudness-agent <agent@example.com>
 Date: Tue, 13 Oct 2026 22:16:47 +0800
-Subject: [PATCH 6/9] feat(failover): remember dead hosts, probe instead of
+Subject: [PATCH 06/10] feat(failover): remember dead hosts, probe instead of
  waiting
 
 The previous failover still felt broken on a network that cannot reach one
@@ -5051,7 +5052,7 @@ index f2f09e2..7b9592d 100644
 From 8c34c660648c23d3c63147d387ec5f9f44bdad4c Mon Sep 17 00:00:00 2001
 From: loudness-agent <agent@example.com>
 Date: Tue, 13 Oct 2026 22:36:18 +0800
-Subject: [PATCH 7/9] perf(failover): first answering mirror wins; skip fast
+Subject: [PATCH 07/10] perf(failover): first answering mirror wins; skip fast
  when several hosts are down
 
 - pickLiveMirror resolves on the first successful probe instead of waiting for
@@ -5171,9 +5172,9 @@ index 7b9592d..f6bf861 100644
 From f32b9d25c2579738e6c2c192ad84ebab115b45b8 Mon Sep 17 00:00:00 2001
 From: loudness-agent <agent@example.com>
 Date: Wed, 14 Oct 2026 12:14:12 +0800
-Subject: [PATCH 8/9] =?UTF-8?q?feat(loudness):=20add=20=E5=93=8D=E5=BA=A6?=
- =?UTF-8?q?=E5=BD=92=E4=B8=80=E7=8B=AC=E5=8D=A0=E6=A8=A1=E5=BC=8F=20(exact?=
- =?UTF-8?q?ly=20one=20loudness=20system)?=
+Subject: [PATCH 08/10] =?UTF-8?q?feat(loudness):=20add=20=E5=93=8D?=
+ =?UTF-8?q?=E5=BA=A6=E5=BD=92=E4=B8=80=E7=8B=AC=E5=8D=A0=E6=A8=A1=E5=BC=8F?=
+ =?UTF-8?q?=20(exactly=20one=20loudness=20system)?=
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
@@ -5456,8 +5457,8 @@ index 3a577a8..8274cfa 100644
 From 00c2c33bfef866fc324c4534868e41b543329103 Mon Sep 17 00:00:00 2001
 From: loudness-agent <agent@example.com>
 Date: Wed, 14 Oct 2026 12:23:47 +0800
-Subject: [PATCH 9/9] =?UTF-8?q?feat(player):=20click=20the=20B=E7=AB=99=20?=
- =?UTF-8?q?icon=20in=20the=20player=20to=20open=20the=20video?=
+Subject: [PATCH 09/10] =?UTF-8?q?feat(player):=20click=20the=20B=E7=AB=99?=
+ =?UTF-8?q?=20icon=20in=20the=20player=20to=20open=20the=20video?=
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
@@ -5538,6 +5539,140 @@ index 0000000..504f7d8
 +    </span>
 +  );
 +}
+-- 
+2.53.0.windows.3
+
+
+From 10ba8b450f5d9cd251ade33eafb602d275fbd245 Mon Sep 17 00:00:00 2001
+From: loudness-agent <agent@example.com>
+Date: Wed, 14 Oct 2026 13:26:27 +0800
+Subject: [PATCH 10/10] style(loudness): move the two intro texts into hover
+ tooltips
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+The two long captions under the exclusive/normalization switches are now Tooltips
+(right side, 300ms delay) and each label carries a small ℹ️ icon to hint that help
+is available, so the settings panel stays tidy.
+---
+ src/components/setting/LoudnessSetting.tsx | 88 ++++++++++++++--------
+ 1 file changed, 56 insertions(+), 32 deletions(-)
+
+diff --git a/src/components/setting/LoudnessSetting.tsx b/src/components/setting/LoudnessSetting.tsx
+index f847ae4..6d99554 100644
+--- a/src/components/setting/LoudnessSetting.tsx
++++ b/src/components/setting/LoudnessSetting.tsx
+@@ -18,6 +18,7 @@ import Select from '@mui/material/Select';
+ import Slider from '@mui/material/Slider';
+ import Tooltip from '@mui/material/Tooltip';
+ import Typography from '@mui/material/Typography';
++import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+ 
+ import { useNoxSetting } from '@APM/stores/useApp';
+ import {
+@@ -43,6 +44,25 @@ const STAGE_LABEL: Record<LoudnessStatus['stage'], string> = {
+   skipped: '未启用',
+ };
+ 
++const LABEL_STYLE: React.CSSProperties = {
++  display: 'inline-flex',
++  alignItems: 'center',
++  gap: 4,
++};
++
++const INFO_ICON_SX = { fontSize: 14, opacity: 0.5 };
++
++/** hover-only help texts, so the panel itself stays tidy */
++const EXCLUSIVE_HELP =
++  '保证只有一个响度系统在动音量：开启后播放器不再施加 B 站自带的响度增益、' +
++  '不再走 ffmpeg 全片测量、也不再使用旧的 r128gain（它会写元素音量）路径。' +
++  '若上面的「响度归一」也开着 → 只由它施加一个固定增益；' +
++  '若把「响度归一」关掉 → 音频完全原始直出（不测量、不改音量）。';
++
++const NORMALIZE_HELP =
++  '先量完整首/整段的集成响度，再对这一个视频施加一个常数增益；' +
++  '不做实时压缩，动态范围原样保留。首次播放要等一小会儿，之后走缓存。';
++
+ export default function LoudnessSetting() {
+   const playerSetting = useNoxSetting((state) => state.playerSetting);
+   const setPlayerSetting = useNoxSetting((state) => state.setPlayerSetting);
+@@ -59,39 +79,43 @@ export default function LoudnessSetting() {
+   return (
+     <Box sx={{ mt: 1, mb: 1 }}>
+       <Divider sx={{ mb: 1 }} />
+-      <FormControlLabel
+-        control={
+-          <Checkbox
+-            checked={exclusive}
+-            onChange={(e) =>
+-              setPlayerSetting({ loudnessExclusive: e.target.checked })
+-            }
+-          />
+-        }
+-        label='🔒 响度归一独占模式'
+-      />
+-      <Typography variant='caption' color='text.secondary'>
+-        保证只有一个响度系统在动音量：开启后播放器不再施加 B 站自带的响度增益、
+-        不再走 ffmpeg 全片测量、也不再使用下面那个旧的
+-        `r128gain`（会写音量）路径。 若上面的「响度归一」也开着 →
+-        只由它施加一个固定增益；若关掉 → 音频完全原始直出。
+-      </Typography>
++      {/* 说明收进悬停提示，让面板保持清爽；ℹ️ 提示"这里有说明" */}
++      <Tooltip title={EXCLUSIVE_HELP} placement='right' arrow enterDelay={300}>
++        <FormControlLabel
++          control={
++            <Checkbox
++              checked={exclusive}
++              onChange={(e) =>
++                setPlayerSetting({ loudnessExclusive: e.target.checked })
++              }
++            />
++          }
++          label={
++            <span style={LABEL_STYLE}>
++              🔒 响度归一独占模式 <InfoOutlinedIcon sx={INFO_ICON_SX} />
++            </span>
++          }
++        />
++      </Tooltip>
+ 
+-      <FormControlLabel
+-        control={
+-          <Checkbox
+-            checked={playerSetting.loudnessNormalize === true}
+-            onChange={(e) =>
+-              setPlayerSetting({ loudnessNormalize: e.target.checked })
+-            }
+-          />
+-        }
+-        label='响度归一（整段测量 + 固定增益）'
+-      />
+-      <Typography variant='caption' color='text.secondary'>
+-        先量完整首/整段的集成响度，再对这一个视频施加一个常数增益；
+-        不做实时压缩，动态范围原样保留。首次播放要等一小会儿，之后走缓存。
+-      </Typography>
++      <Tooltip title={NORMALIZE_HELP} placement='right' arrow enterDelay={300}>
++        <FormControlLabel
++          control={
++            <Checkbox
++              checked={playerSetting.loudnessNormalize === true}
++              onChange={(e) =>
++                setPlayerSetting({ loudnessNormalize: e.target.checked })
++              }
++            />
++          }
++          label={
++            <span style={LABEL_STYLE}>
++              响度归一（整段测量 + 固定增益）
++              <InfoOutlinedIcon sx={INFO_ICON_SX} />
++            </span>
++          }
++        />
++      </Tooltip>
+ 
+       <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', mt: 1 }}>
+         <FormControl size='small' sx={{ minWidth: 160 }}>
 -- 
 2.53.0.windows.3
 
