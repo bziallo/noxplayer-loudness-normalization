@@ -951,10 +951,10 @@ index 0000000..6899dc1
 +fs.rmSync(OUT, { recursive: true, force: true });
 diff --git a/src/NoxTypes/loudness.d.ts b/src/NoxTypes/loudness.d.ts
 new file mode 100644
-index 0000000..2a4b1e5
+index 0000000..ce76e5c
 --- /dev/null
 +++ b/src/NoxTypes/loudness.d.ts
-@@ -0,0 +1,25 @@
+@@ -0,0 +1,31 @@
 +/**
 + * Settings for whole-track loudness normalization (measure the track, then
 + * apply one fixed gain). All keys are optional so that the shared defaults in
@@ -978,10 +978,16 @@ index 0000000..2a4b1e5
 +    loudnessBypass?: boolean;
 +    /** measure the next track in the queue while this one plays */
 +    loudnessPrefetchNext?: boolean;
++    /**
++     * Exclusive mode: the player adds nothing to the audio path — no Web Audio
++     * takeover, no B站 metadata gain, no ffmpeg pass — so exactly one loudness
++     * system (this one, when enabled) is in charge.
++     */
++    loudnessExclusive?: boolean;
 +  }
 +}
 diff --git a/src/components/App/App.tsx b/src/components/App/App.tsx
-index bb293d1..b852109 100644
+index bb293d1..590ae15 100644
 --- a/src/components/App/App.tsx
 +++ b/src/components/App/App.tsx
 @@ -7,6 +7,7 @@ import { useHotkeys } from 'react-hotkeys-hook';
@@ -1014,12 +1020,42 @@ index bb293d1..b852109 100644
    useEffect(() => {
      if (!currentAudio?.name) return;
      document.title = `${currentAudio.name} - ${appTitle}`;
+@@ -82,6 +91,29 @@ export default function Player({ playlist, lastPlayDuration }: Props) {
+   return (
+     <React.Fragment>
+       <FavList />
++      {/* Exclusive mode badge: make it obvious which system owns the volume */}
++      {playerSetting.loudnessExclusive === true && (
++        <div
++          style={{
++            position: 'fixed',
++            top: 8,
++            right: 12,
++            zIndex: 2000,
++            padding: '2px 10px',
++            borderRadius: 12,
++            fontSize: 12,
++            lineHeight: '18px',
++            color: '#fff',
++            background: 'rgba(0,0,0,.55)',
++            pointerEvents: 'none',
++            userSelect: 'none',
++          }}
++        >
++          {playerSetting.loudnessNormalize === true
++            ? '🔊 响度归一独占中'
++            : '🔒 独占模式：原始输出'}
++        </div>
++      )}
+       {currentAudio?.id && (
+         <LyricOverlay
+           showLyric={showLyric}
 diff --git a/src/components/setting/LoudnessSetting.tsx b/src/components/setting/LoudnessSetting.tsx
 new file mode 100644
-index 0000000..f6ea09d
+index 0000000..f847ae4
 --- /dev/null
 +++ b/src/components/setting/LoudnessSetting.tsx
-@@ -0,0 +1,215 @@
+@@ -0,0 +1,249 @@
 +/* ================================================================
 + * LoudnessSetting.tsx — settings panel for whole-track loudness normalization.
 + *
@@ -1074,12 +1110,31 @@ index 0000000..f6ea09d
 +
 +  const setting = resolveLoudnessSetting(playerSetting);
 +  const isCustom = playerSetting.loudnessProfile === CUSTOM_PROFILE_KEY;
++  const exclusive = setting.exclusive;
 +  const fmt = (v?: number, unit = '') =>
 +    v === undefined || v === null ? '—' : `${v}${unit}`;
 +
 +  return (
 +    <Box sx={{ mt: 1, mb: 1 }}>
 +      <Divider sx={{ mb: 1 }} />
++      <FormControlLabel
++        control={
++          <Checkbox
++            checked={exclusive}
++            onChange={(e) =>
++              setPlayerSetting({ loudnessExclusive: e.target.checked })
++            }
++          />
++        }
++        label='🔒 响度归一独占模式'
++      />
++      <Typography variant='caption' color='text.secondary'>
++        保证只有一个响度系统在动音量：开启后播放器不再施加 B 站自带的响度增益、
++        不再走 ffmpeg 全片测量、也不再使用下面那个旧的
++        `r128gain`（会写音量）路径。 若上面的「响度归一」也开着 →
++        只由它施加一个固定增益；若关掉 → 音频完全原始直出。
++      </Typography>
++
 +      <FormControlLabel
 +        control={
 +          <Checkbox
@@ -1120,7 +1175,10 @@ index 0000000..f6ea09d
 +          <Select
 +            labelId='loudness-engine-label'
 +            label='测量方式'
-+            value={playerSetting.loudnessEngine ?? 'auto'}
++            disabled={exclusive}
++            value={
++              exclusive ? 'sidx' : (playerSetting.loudnessEngine ?? 'auto')
++            }
 +            onChange={(e) =>
 +              setPlayerSetting({
 +                loudnessEngine: e.target.value as 'auto' | 'sidx' | 'ffmpeg',
@@ -1129,10 +1187,22 @@ index 0000000..f6ea09d
 +          >
 +            <MenuItem value='auto'>自动（B站抽样 / 其它 ffmpeg）</MenuItem>
 +            <MenuItem value='sidx'>抽样测量（快，约 0.5MB）</MenuItem>
-+            <MenuItem value='ffmpeg'>ffmpeg 全片（慢，最准）</MenuItem>
++            <MenuItem value='ffmpeg'>
++              ffmpeg 全片（慢，最准；独占模式下不可用）
++            </MenuItem>
 +          </Select>
 +        </FormControl>
 +      </Box>
++
++      {exclusive && (
++        <Typography variant='caption' color='text.secondary'>
++          当前生效的音频处理链：
++          {playerSetting.loudnessNormalize === true
++            ? ' 播放器增益路径 = 仅「响度归一」的单个固定增益（Web Audio GainNode）'
++            : ' 无 —— 音频完全原始直出（不做测量、不改音量）'}
++          ； B 站元数据增益 = 忽略 ； ffmpeg = 不参与 ； 旧 r128gain = 已禁用
++        </Typography>
++      )}
 +
 +      <Box sx={{ mt: 1, px: 1 }}>
 +        <Tooltip title='拖动后自动切到「自定义」档案'>
@@ -1236,7 +1306,7 @@ index 0000000..f6ea09d
 +  );
 +}
 diff --git a/src/components/setting/SettingTab.tsx b/src/components/setting/SettingTab.tsx
-index ebaba7b..a12e8bb 100644
+index ebaba7b..dd3dc1b 100644
 --- a/src/components/setting/SettingTab.tsx
 +++ b/src/components/setting/SettingTab.tsx
 @@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next';
@@ -1247,16 +1317,54 @@ index ebaba7b..a12e8bb 100644
  import SETTING_TAB from './enums';
  
  interface BooleanCheckboxProps {
-@@ -69,6 +70,7 @@ function SettingsPanel() {
+@@ -16,6 +17,7 @@ interface BooleanCheckboxProps {
+   tooltip?: string;
+   label?: string;
+   callback?: () => void;
++  disabled?: boolean;
+ }
+ function BooleanCheckbox({
+   settingKey,
+@@ -23,6 +25,7 @@ function BooleanCheckbox({
+   label,
+   settingCategory = 'GeneralSettings',
+   callback,
++  disabled,
+ }: BooleanCheckboxProps) {
+   const { t } = useTranslation();
+   const playerSetting = useNoxSetting((state) => state.playerSetting);
+@@ -33,6 +36,7 @@ function BooleanCheckbox({
+       <FormControlLabel
+         control={
+           <Checkbox
++            disabled={disabled}
+             onChange={(e) => {
+               setPlayerSetting({ [settingKey]: e.target.checked });
+               callback?.();
+@@ -47,6 +51,7 @@ function BooleanCheckbox({
+ }
+ 
+ function SettingsPanel() {
++  const playerSetting = useNoxSetting((state) => state.playerSetting);
+   return (
+     <React.Fragment>
+       <SyncSetting />
+@@ -68,7 +73,12 @@ function SettingsPanel() {
+       />
        <BooleanCheckbox settingKey='noCookieBiliSearch' />
        <BooleanCheckbox settingKey='fastBiliSearch' />
-       <BooleanCheckbox settingKey='r128gain' />
+-      <BooleanCheckbox settingKey='r128gain' />
++      <BooleanCheckbox
++        settingKey='r128gain'
++        disabled={playerSetting.loudnessExclusive === true}
++        tooltip='旧版 ffmpeg 即时均衡（会写元素音量）。响度归一独占模式开启时自动禁用，避免两个系统同时改音量。'
++      />
 +      <LoudnessSetting />
        <BooleanCheckbox
          settingKey='memoryEfficiency'
          callback={globalThis.location.reload}
 diff --git a/src/hooks/usePlayback.ts b/src/hooks/usePlayback.ts
-index f955321..2c9a59c 100644
+index f955321..1b012df 100644
 --- a/src/hooks/usePlayback.ts
 +++ b/src/hooks/usePlayback.ts
 @@ -1,4 +1,4 @@
@@ -1305,7 +1413,7 @@ index f955321..2c9a59c 100644
      ) {
        return;
      }
-@@ -65,6 +80,214 @@ export default () => {
+@@ -65,17 +80,241 @@ export default () => {
      }, 500);
    };
  
@@ -1519,8 +1627,14 @@ index f955321..2c9a59c 100644
 +
    const musicSrcParser = async (v: NoxMedia.Song) => {
      try {
++      const settingNow = useNoxSetting.getState().playerSetting;
++      // exclusive mode ignores B站's own loudness metadata as well
++      const exclusive = settingNow.loudnessExclusive === true;
        const resolvedUrl = await fetchPlayUrlPromise({
-@@ -74,8 +297,20 @@ export default () => {
+         song: v,
+-        noBiliR128Gain: playerSetting.noBiliR128Gain,
++        noBiliR128Gain: playerSetting.noBiliR128Gain || exclusive,
+       });
        if (resolvedUrl.url === DEFAULT_NULL_URL) {
          throw new Error('resolve failed');
        }
@@ -1533,17 +1647,18 @@ index f955321..2c9a59c 100644
 +      currentSongRef.current = v;
 +      resetMirrors(v.id);
 +      loudness.resetPlaybackFailed(v.id);
-+      if (useNoxSetting.getState().playerSetting.loudnessNormalize === true) {
++      if (settingNow.loudnessNormalize === true) {
 +        normalizeLoudness(v, playableUrl);
-+      } else {
++      } else if (!exclusive) {
 +        // legacy replaygain path, kept for the pre-existing `r128gain` switch
++        // (skipped in exclusive mode: it writes audio.volume)
 +        parseR128Gain(v, async () => resolvedUrl);
 +      }
 +      return playableUrl;
      } catch (e) {
        console.error(`[resolveURL] failed to resolve ${v.bvid}: ${e}`);
        setTimeout(() => currentAudioInst?.playNext?.(), 1000);
-@@ -186,6 +421,8 @@ export default () => {
+@@ -186,6 +425,8 @@ export default () => {
  
    const onAudioVolumeChange = (currentVolume: number) => {
      // console.log('[RJKM] audio volume change', currentVolume)
@@ -1552,7 +1667,7 @@ index f955321..2c9a59c 100644
      setPlayerSettings({ defaultVolume: Math.sqrt(currentVolume) });
    };
  
-@@ -242,6 +479,7 @@ export default () => {
+@@ -242,6 +483,7 @@ export default () => {
      setCurrentAudio(audioInfo);
      setCurrentPlayingId(audioInfo.id);
      sendBiliHeartbeat(audioInfo);
@@ -1560,7 +1675,7 @@ index f955321..2c9a59c 100644
    };
  
    const onAudioError = (
-@@ -250,12 +488,13 @@ export default () => {
+@@ -250,12 +492,13 @@ export default () => {
      _audioLists: NoxMedia.Song[],
      audioInfo: NoxMedia.Song,
    ) => {
@@ -2492,10 +2607,10 @@ index 0000000..9bae80a
 +};
 diff --git a/src/utils/audio/loudness/normalizeClient.ts b/src/utils/audio/loudness/normalizeClient.ts
 new file mode 100644
-index 0000000..3a577a8
+index 0000000..8274cfa
 --- /dev/null
 +++ b/src/utils/audio/loudness/normalizeClient.ts
-@@ -0,0 +1,545 @@
+@@ -0,0 +1,559 @@
 +/* ================================================================
 + * normalizeClient.ts — orchestration: cache -> measure -> plan -> apply.
 + *
@@ -2542,6 +2657,12 @@ index 0000000..3a577a8
 +  engine: LoudnessEngineOption;
 +  bypass: boolean;
 +  prefetchNext: boolean;
++  /**
++   * Exclusive mode: keep the audio path untouched by this player, so nothing
++   * competes with the (single) loudness system. Sampling only — never the
++   * ffmpeg pass — and no Web Audio takeover.
++   */
++  exclusive: boolean;
 +}
 +
 +export interface NormalizeOptions {
@@ -2580,9 +2701,15 @@ index 0000000..3a577a8
 +  return {
 +    enabled: playerSetting?.loudnessNormalize === true,
 +    profile,
-+    engine: playerSetting?.loudnessEngine ?? 'auto',
++    // exclusive mode means "only this player's loudness normalization may touch
++    // the audio", so the whole-file ffmpeg pass is off the table
++    engine:
++      playerSetting?.loudnessExclusive === true
++        ? 'sidx'
++        : (playerSetting?.loudnessEngine ?? 'auto'),
 +    bypass: playerSetting?.loudnessBypass === true,
 +    prefetchNext: playerSetting?.loudnessPrefetchNext !== false,
++    exclusive: playerSetting?.loudnessExclusive === true,
 +  };
 +};
 +
@@ -2846,7 +2973,9 @@ index 0000000..3a577a8
 +      songId,
 +      name: opts.song.name,
 +      stage: 'skipped',
-+      reason: 'loudness normalization disabled',
++      reason: setting.exclusive
++        ? '独占模式：完全原始输出（不做任何处理）'
++        : 'loudness normalization disabled',
 +    });
 +  }
 +

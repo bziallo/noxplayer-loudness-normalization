@@ -1,7 +1,7 @@
 From faef93a93d8f771cfe7de0b86db942d032a051af Mon Sep 17 00:00:00 2001
 From: loudness-agent <agent@example.com>
 Date: Tue, 13 Oct 2026 15:01:51 +0800
-Subject: [PATCH 1/7] feat(loudness): whole-track loudness normalization (one
+Subject: [PATCH 1/8] feat(loudness): whole-track loudness normalization (one
  fixed gain per track)
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
@@ -3383,7 +3383,7 @@ index f2217e1..5c261f4 100644
 From 49a8e199b23e6989d432a4b2b1e279ef64a65fa2 Mon Sep 17 00:00:00 2001
 From: loudness-agent <agent@example.com>
 Date: Tue, 13 Oct 2026 15:01:51 +0800
-Subject: [PATCH 2/7] test(loudness): add probe/loudness self checks + docs
+Subject: [PATCH 2/8] test(loudness): add probe/loudness self checks + docs
 
 `node probe/loudness/check.mjs` transpiles the loudness modules with the repo's
 own typescript and checks them without touching the network or the extension:
@@ -3846,7 +3846,7 @@ index 0000000..6899dc1
 From 31ec560aa28bcff34888970b44ef969ea0dc0b3e Mon Sep 17 00:00:00 2001
 From: loudness-agent <agent@example.com>
 Date: Tue, 13 Oct 2026 16:54:58 +0800
-Subject: [PATCH 3/7] chore(loudness): expose a noxLoudness debug handle
+Subject: [PATCH 3/8] chore(loudness): expose a noxLoudness debug handle
 
 Exposes the normalization API (status, gain value, bypass, engine mode) on the
 player page global, mirroring the userscript `__biliLoudness` handle, so that
@@ -3897,7 +3897,7 @@ index 59e4793..894dce7 100644
 From f4b3c4c5bf2788827d05fbb3f4f83852d688236f Mon Sep 17 00:00:00 2001
 From: loudness-agent <agent@example.com>
 Date: Tue, 13 Oct 2026 22:02:18 +0800
-Subject: [PATCH 4/7] feat(failover): retry a dead CDN mirror instead of never
+Subject: [PATCH 4/8] feat(failover): retry a dead CDN mirror instead of never
  playing
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
@@ -4604,7 +4604,7 @@ index 0000000..f2f09e2
 From 6fefb8fc18087170d698f8b24ce4bf71ddab41ef Mon Sep 17 00:00:00 2001
 From: loudness-agent <agent@example.com>
 Date: Tue, 13 Oct 2026 22:04:35 +0800
-Subject: [PATCH 5/7] feat(covers): retry a cover image on another hdslb shard
+Subject: [PATCH 5/8] feat(covers): retry a cover image on another hdslb shard
 
 i0/i1/i2.hdslb.com are replicas of the same object store (verified: the same
 /bfs/archive/*.jpg returns byte-identical content from all three), yet a single
@@ -4711,7 +4711,7 @@ index 0000000..f616ba1
 From 3b3a89a05d1a716c5f1405541ecf0a56834dddad Mon Sep 17 00:00:00 2001
 From: loudness-agent <agent@example.com>
 Date: Tue, 13 Oct 2026 22:16:47 +0800
-Subject: [PATCH 6/7] feat(failover): remember dead hosts, probe instead of
+Subject: [PATCH 6/8] feat(failover): remember dead hosts, probe instead of
  waiting
 
 The previous failover still felt broken on a network that cannot reach one
@@ -5051,7 +5051,7 @@ index f2f09e2..7b9592d 100644
 From 8c34c660648c23d3c63147d387ec5f9f44bdad4c Mon Sep 17 00:00:00 2001
 From: loudness-agent <agent@example.com>
 Date: Tue, 13 Oct 2026 22:36:18 +0800
-Subject: [PATCH 7/7] perf(failover): first answering mirror wins; skip fast
+Subject: [PATCH 7/8] perf(failover): first answering mirror wins; skip fast
  when several hosts are down
 
 - pickLiveMirror resolves on the first successful probe instead of waiting for
@@ -5164,6 +5164,291 @@ index 7b9592d..f6bf861 100644
  };
  
  const bestByBandwidth = (list?: { bandwidth?: number }[]) =>
+-- 
+2.53.0.windows.3
+
+
+From f32b9d25c2579738e6c2c192ad84ebab115b45b8 Mon Sep 17 00:00:00 2001
+From: loudness-agent <agent@example.com>
+Date: Wed, 14 Oct 2026 12:14:12 +0800
+Subject: [PATCH 8/8] =?UTF-8?q?feat(loudness):=20add=20=E5=93=8D=E5=BA=A6?=
+ =?UTF-8?q?=E5=BD=92=E4=B8=80=E7=8B=AC=E5=8D=A0=E6=A8=A1=E5=BC=8F=20(exact?=
+ =?UTF-8?q?ly=20one=20loudness=20system)?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+The player, B站's own loudness levelling and the Bilibili_LoudNorm userscript can
+all end up fighting over the same volume. This adds a single switch that makes
+sure only *this* player's loudness normalization may touch the audio:
+
+  * new `loudnessExclusive` setting, default off, rendered as the first switch of
+    the loudness block; a floating badge shows 🔒/🔊 state in the player
+  * exclusive mode forces the sampled measurement (never the whole-file ffmpeg
+    pass), ignores B站's own loudness metadata and skips the legacy `r128gain`
+    path that writes `audio.volume`
+  * with the main loudness switch off, exclusive mode touches nothing at all:
+    no Web Audio takeover, no measuring — plain raw passthrough
+  * the settings panel now lists the currently effective audio chain, and the
+    `r128gain` checkbox is greyed out while exclusive mode is on
+---
+ src/NoxTypes/loudness.d.ts                  |  6 ++++
+ src/components/App/App.tsx                  | 23 +++++++++++++
+ src/components/setting/LoudnessSetting.tsx  | 38 +++++++++++++++++++--
+ src/components/setting/SettingTab.tsx       | 10 +++++-
+ src/hooks/usePlayback.ts                    | 10 ++++--
+ src/utils/audio/loudness/normalizeClient.ts | 18 ++++++++--
+ 6 files changed, 97 insertions(+), 8 deletions(-)
+
+diff --git a/src/NoxTypes/loudness.d.ts b/src/NoxTypes/loudness.d.ts
+index 2a4b1e5..ce76e5c 100644
+--- a/src/NoxTypes/loudness.d.ts
++++ b/src/NoxTypes/loudness.d.ts
+@@ -21,5 +21,11 @@ declare namespace NoxStorage {
+     loudnessBypass?: boolean;
+     /** measure the next track in the queue while this one plays */
+     loudnessPrefetchNext?: boolean;
++    /**
++     * Exclusive mode: the player adds nothing to the audio path — no Web Audio
++     * takeover, no B站 metadata gain, no ffmpeg pass — so exactly one loudness
++     * system (this one, when enabled) is in charge.
++     */
++    loudnessExclusive?: boolean;
+   }
+ }
+diff --git a/src/components/App/App.tsx b/src/components/App/App.tsx
+index b852109..590ae15 100644
+--- a/src/components/App/App.tsx
++++ b/src/components/App/App.tsx
+@@ -91,6 +91,29 @@ export default function Player({ playlist, lastPlayDuration }: Props) {
+   return (
+     <React.Fragment>
+       <FavList />
++      {/* Exclusive mode badge: make it obvious which system owns the volume */}
++      {playerSetting.loudnessExclusive === true && (
++        <div
++          style={{
++            position: 'fixed',
++            top: 8,
++            right: 12,
++            zIndex: 2000,
++            padding: '2px 10px',
++            borderRadius: 12,
++            fontSize: 12,
++            lineHeight: '18px',
++            color: '#fff',
++            background: 'rgba(0,0,0,.55)',
++            pointerEvents: 'none',
++            userSelect: 'none',
++          }}
++        >
++          {playerSetting.loudnessNormalize === true
++            ? '🔊 响度归一独占中'
++            : '🔒 独占模式：原始输出'}
++        </div>
++      )}
+       {currentAudio?.id && (
+         <LyricOverlay
+           showLyric={showLyric}
+diff --git a/src/components/setting/LoudnessSetting.tsx b/src/components/setting/LoudnessSetting.tsx
+index f6ea09d..f847ae4 100644
+--- a/src/components/setting/LoudnessSetting.tsx
++++ b/src/components/setting/LoudnessSetting.tsx
+@@ -52,12 +52,31 @@ export default function LoudnessSetting() {
+ 
+   const setting = resolveLoudnessSetting(playerSetting);
+   const isCustom = playerSetting.loudnessProfile === CUSTOM_PROFILE_KEY;
++  const exclusive = setting.exclusive;
+   const fmt = (v?: number, unit = '') =>
+     v === undefined || v === null ? '—' : `${v}${unit}`;
+ 
+   return (
+     <Box sx={{ mt: 1, mb: 1 }}>
+       <Divider sx={{ mb: 1 }} />
++      <FormControlLabel
++        control={
++          <Checkbox
++            checked={exclusive}
++            onChange={(e) =>
++              setPlayerSetting({ loudnessExclusive: e.target.checked })
++            }
++          />
++        }
++        label='🔒 响度归一独占模式'
++      />
++      <Typography variant='caption' color='text.secondary'>
++        保证只有一个响度系统在动音量：开启后播放器不再施加 B 站自带的响度增益、
++        不再走 ffmpeg 全片测量、也不再使用下面那个旧的
++        `r128gain`（会写音量）路径。 若上面的「响度归一」也开着 →
++        只由它施加一个固定增益；若关掉 → 音频完全原始直出。
++      </Typography>
++
+       <FormControlLabel
+         control={
+           <Checkbox
+@@ -98,7 +117,10 @@ export default function LoudnessSetting() {
+           <Select
+             labelId='loudness-engine-label'
+             label='测量方式'
+-            value={playerSetting.loudnessEngine ?? 'auto'}
++            disabled={exclusive}
++            value={
++              exclusive ? 'sidx' : (playerSetting.loudnessEngine ?? 'auto')
++            }
+             onChange={(e) =>
+               setPlayerSetting({
+                 loudnessEngine: e.target.value as 'auto' | 'sidx' | 'ffmpeg',
+@@ -107,11 +129,23 @@ export default function LoudnessSetting() {
+           >
+             <MenuItem value='auto'>自动（B站抽样 / 其它 ffmpeg）</MenuItem>
+             <MenuItem value='sidx'>抽样测量（快，约 0.5MB）</MenuItem>
+-            <MenuItem value='ffmpeg'>ffmpeg 全片（慢，最准）</MenuItem>
++            <MenuItem value='ffmpeg'>
++              ffmpeg 全片（慢，最准；独占模式下不可用）
++            </MenuItem>
+           </Select>
+         </FormControl>
+       </Box>
+ 
++      {exclusive && (
++        <Typography variant='caption' color='text.secondary'>
++          当前生效的音频处理链：
++          {playerSetting.loudnessNormalize === true
++            ? ' 播放器增益路径 = 仅「响度归一」的单个固定增益（Web Audio GainNode）'
++            : ' 无 —— 音频完全原始直出（不做测量、不改音量）'}
++          ； B 站元数据增益 = 忽略 ； ffmpeg = 不参与 ； 旧 r128gain = 已禁用
++        </Typography>
++      )}
++
+       <Box sx={{ mt: 1, px: 1 }}>
+         <Tooltip title='拖动后自动切到「自定义」档案'>
+           <Typography variant='body2'>
+diff --git a/src/components/setting/SettingTab.tsx b/src/components/setting/SettingTab.tsx
+index a12e8bb..dd3dc1b 100644
+--- a/src/components/setting/SettingTab.tsx
++++ b/src/components/setting/SettingTab.tsx
+@@ -17,6 +17,7 @@ interface BooleanCheckboxProps {
+   tooltip?: string;
+   label?: string;
+   callback?: () => void;
++  disabled?: boolean;
+ }
+ function BooleanCheckbox({
+   settingKey,
+@@ -24,6 +25,7 @@ function BooleanCheckbox({
+   label,
+   settingCategory = 'GeneralSettings',
+   callback,
++  disabled,
+ }: BooleanCheckboxProps) {
+   const { t } = useTranslation();
+   const playerSetting = useNoxSetting((state) => state.playerSetting);
+@@ -34,6 +36,7 @@ function BooleanCheckbox({
+       <FormControlLabel
+         control={
+           <Checkbox
++            disabled={disabled}
+             onChange={(e) => {
+               setPlayerSetting({ [settingKey]: e.target.checked });
+               callback?.();
+@@ -48,6 +51,7 @@ function BooleanCheckbox({
+ }
+ 
+ function SettingsPanel() {
++  const playerSetting = useNoxSetting((state) => state.playerSetting);
+   return (
+     <React.Fragment>
+       <SyncSetting />
+@@ -69,7 +73,11 @@ function SettingsPanel() {
+       />
+       <BooleanCheckbox settingKey='noCookieBiliSearch' />
+       <BooleanCheckbox settingKey='fastBiliSearch' />
+-      <BooleanCheckbox settingKey='r128gain' />
++      <BooleanCheckbox
++        settingKey='r128gain'
++        disabled={playerSetting.loudnessExclusive === true}
++        tooltip='旧版 ffmpeg 即时均衡（会写元素音量）。响度归一独占模式开启时自动禁用，避免两个系统同时改音量。'
++      />
+       <LoudnessSetting />
+       <BooleanCheckbox
+         settingKey='memoryEfficiency'
+diff --git a/src/hooks/usePlayback.ts b/src/hooks/usePlayback.ts
+index 2c9a59c..1b012df 100644
+--- a/src/hooks/usePlayback.ts
++++ b/src/hooks/usePlayback.ts
+@@ -290,9 +290,12 @@ export default () => {
+ 
+   const musicSrcParser = async (v: NoxMedia.Song) => {
+     try {
++      const settingNow = useNoxSetting.getState().playerSetting;
++      // exclusive mode ignores B站's own loudness metadata as well
++      const exclusive = settingNow.loudnessExclusive === true;
+       const resolvedUrl = await fetchPlayUrlPromise({
+         song: v,
+-        noBiliR128Gain: playerSetting.noBiliR128Gain,
++        noBiliR128Gain: playerSetting.noBiliR128Gain || exclusive,
+       });
+       if (resolvedUrl.url === DEFAULT_NULL_URL) {
+         throw new Error('resolve failed');
+@@ -304,10 +307,11 @@ export default () => {
+       currentSongRef.current = v;
+       resetMirrors(v.id);
+       loudness.resetPlaybackFailed(v.id);
+-      if (useNoxSetting.getState().playerSetting.loudnessNormalize === true) {
++      if (settingNow.loudnessNormalize === true) {
+         normalizeLoudness(v, playableUrl);
+-      } else {
++      } else if (!exclusive) {
+         // legacy replaygain path, kept for the pre-existing `r128gain` switch
++        // (skipped in exclusive mode: it writes audio.volume)
+         parseR128Gain(v, async () => resolvedUrl);
+       }
+       return playableUrl;
+diff --git a/src/utils/audio/loudness/normalizeClient.ts b/src/utils/audio/loudness/normalizeClient.ts
+index 3a577a8..8274cfa 100644
+--- a/src/utils/audio/loudness/normalizeClient.ts
++++ b/src/utils/audio/loudness/normalizeClient.ts
+@@ -44,6 +44,12 @@ export interface LoudnessSetting {
+   engine: LoudnessEngineOption;
+   bypass: boolean;
+   prefetchNext: boolean;
++  /**
++   * Exclusive mode: keep the audio path untouched by this player, so nothing
++   * competes with the (single) loudness system. Sampling only — never the
++   * ffmpeg pass — and no Web Audio takeover.
++   */
++  exclusive: boolean;
+ }
+ 
+ export interface NormalizeOptions {
+@@ -82,9 +88,15 @@ export const resolveLoudnessSetting = (
+   return {
+     enabled: playerSetting?.loudnessNormalize === true,
+     profile,
+-    engine: playerSetting?.loudnessEngine ?? 'auto',
++    // exclusive mode means "only this player's loudness normalization may touch
++    // the audio", so the whole-file ffmpeg pass is off the table
++    engine:
++      playerSetting?.loudnessExclusive === true
++        ? 'sidx'
++        : (playerSetting?.loudnessEngine ?? 'auto'),
+     bypass: playerSetting?.loudnessBypass === true,
+     prefetchNext: playerSetting?.loudnessPrefetchNext !== false,
++    exclusive: playerSetting?.loudnessExclusive === true,
+   };
+ };
+ 
+@@ -348,7 +360,9 @@ export const resolveForPlayback = (opts: NormalizeOptions) => {
+       songId,
+       name: opts.song.name,
+       stage: 'skipped',
+-      reason: 'loudness normalization disabled',
++      reason: setting.exclusive
++        ? '独占模式：完全原始输出（不做任何处理）'
++        : 'loudness normalization disabled',
+     });
+   }
+ 
 -- 
 2.53.0.windows.3
 
