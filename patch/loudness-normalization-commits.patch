@@ -1,7 +1,7 @@
 From faef93a93d8f771cfe7de0b86db942d032a051af Mon Sep 17 00:00:00 2001
 From: loudness-agent <agent@example.com>
 Date: Tue, 13 Oct 2026 15:01:51 +0800
-Subject: [PATCH 1/8] feat(loudness): whole-track loudness normalization (one
+Subject: [PATCH 1/9] feat(loudness): whole-track loudness normalization (one
  fixed gain per track)
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
@@ -3383,7 +3383,7 @@ index f2217e1..5c261f4 100644
 From 49a8e199b23e6989d432a4b2b1e279ef64a65fa2 Mon Sep 17 00:00:00 2001
 From: loudness-agent <agent@example.com>
 Date: Tue, 13 Oct 2026 15:01:51 +0800
-Subject: [PATCH 2/8] test(loudness): add probe/loudness self checks + docs
+Subject: [PATCH 2/9] test(loudness): add probe/loudness self checks + docs
 
 `node probe/loudness/check.mjs` transpiles the loudness modules with the repo's
 own typescript and checks them without touching the network or the extension:
@@ -3846,7 +3846,7 @@ index 0000000..6899dc1
 From 31ec560aa28bcff34888970b44ef969ea0dc0b3e Mon Sep 17 00:00:00 2001
 From: loudness-agent <agent@example.com>
 Date: Tue, 13 Oct 2026 16:54:58 +0800
-Subject: [PATCH 3/8] chore(loudness): expose a noxLoudness debug handle
+Subject: [PATCH 3/9] chore(loudness): expose a noxLoudness debug handle
 
 Exposes the normalization API (status, gain value, bypass, engine mode) on the
 player page global, mirroring the userscript `__biliLoudness` handle, so that
@@ -3897,7 +3897,7 @@ index 59e4793..894dce7 100644
 From f4b3c4c5bf2788827d05fbb3f4f83852d688236f Mon Sep 17 00:00:00 2001
 From: loudness-agent <agent@example.com>
 Date: Tue, 13 Oct 2026 22:02:18 +0800
-Subject: [PATCH 4/8] feat(failover): retry a dead CDN mirror instead of never
+Subject: [PATCH 4/9] feat(failover): retry a dead CDN mirror instead of never
  playing
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
@@ -4604,7 +4604,7 @@ index 0000000..f2f09e2
 From 6fefb8fc18087170d698f8b24ce4bf71ddab41ef Mon Sep 17 00:00:00 2001
 From: loudness-agent <agent@example.com>
 Date: Tue, 13 Oct 2026 22:04:35 +0800
-Subject: [PATCH 5/8] feat(covers): retry a cover image on another hdslb shard
+Subject: [PATCH 5/9] feat(covers): retry a cover image on another hdslb shard
 
 i0/i1/i2.hdslb.com are replicas of the same object store (verified: the same
 /bfs/archive/*.jpg returns byte-identical content from all three), yet a single
@@ -4711,7 +4711,7 @@ index 0000000..f616ba1
 From 3b3a89a05d1a716c5f1405541ecf0a56834dddad Mon Sep 17 00:00:00 2001
 From: loudness-agent <agent@example.com>
 Date: Tue, 13 Oct 2026 22:16:47 +0800
-Subject: [PATCH 6/8] feat(failover): remember dead hosts, probe instead of
+Subject: [PATCH 6/9] feat(failover): remember dead hosts, probe instead of
  waiting
 
 The previous failover still felt broken on a network that cannot reach one
@@ -5051,7 +5051,7 @@ index f2f09e2..7b9592d 100644
 From 8c34c660648c23d3c63147d387ec5f9f44bdad4c Mon Sep 17 00:00:00 2001
 From: loudness-agent <agent@example.com>
 Date: Tue, 13 Oct 2026 22:36:18 +0800
-Subject: [PATCH 7/8] perf(failover): first answering mirror wins; skip fast
+Subject: [PATCH 7/9] perf(failover): first answering mirror wins; skip fast
  when several hosts are down
 
 - pickLiveMirror resolves on the first successful probe instead of waiting for
@@ -5171,7 +5171,7 @@ index 7b9592d..f6bf861 100644
 From f32b9d25c2579738e6c2c192ad84ebab115b45b8 Mon Sep 17 00:00:00 2001
 From: loudness-agent <agent@example.com>
 Date: Wed, 14 Oct 2026 12:14:12 +0800
-Subject: [PATCH 8/8] =?UTF-8?q?feat(loudness):=20add=20=E5=93=8D=E5=BA=A6?=
+Subject: [PATCH 8/9] =?UTF-8?q?feat(loudness):=20add=20=E5=93=8D=E5=BA=A6?=
  =?UTF-8?q?=E5=BD=92=E4=B8=80=E7=8B=AC=E5=8D=A0=E6=A8=A1=E5=BC=8F=20(exact?=
  =?UTF-8?q?ly=20one=20loudness=20system)?=
 MIME-Version: 1.0
@@ -5449,6 +5449,95 @@ index 3a577a8..8274cfa 100644
      });
    }
  
+-- 
+2.53.0.windows.3
+
+
+From 00c2c33bfef866fc324c4534868e41b543329103 Mon Sep 17 00:00:00 2001
+From: loudness-agent <agent@example.com>
+Date: Wed, 14 Oct 2026 12:23:47 +0800
+Subject: [PATCH 9/9] =?UTF-8?q?feat(player):=20click=20the=20B=E7=AB=99=20?=
+ =?UTF-8?q?icon=20in=20the=20player=20to=20open=20the=20video?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Mirrors 电梓播放器's buildExternalLink: the player-area extends content (next to
+点赞/收藏) now starts with the B站 icon, and clicking it opens that song's video
+page in a new tab — the page number comes from the shared songExport2URL, so
+multi-P videos land on the right part. Only rendered for B站 sources; the
+playlist's right-click menu keeps offering the same action for every source.
+---
+ src/components/App/ExtendContent.tsx       |  2 ++
+ src/components/buttons/BiliVideoButton.tsx | 39 ++++++++++++++++++++++
+ 2 files changed, 41 insertions(+)
+ create mode 100644 src/components/buttons/BiliVideoButton.tsx
+
+diff --git a/src/components/App/ExtendContent.tsx b/src/components/App/ExtendContent.tsx
+index dd45d5f..72ce126 100644
+--- a/src/components/App/ExtendContent.tsx
++++ b/src/components/App/ExtendContent.tsx
+@@ -1,6 +1,7 @@
+ import React from 'react';
+ 
+ import { filterUndefined } from '@utils/Utils';
++import BiliVideoButton from '../buttons/BiliVideoButton';
+ import ThumbsUpButton from '../buttons/ThumbsUpButton';
+ import FavoriteButton from '../buttons/FavoriteSongButton';
+ 
+@@ -10,6 +11,7 @@ const ExtendsContent = (song: NoxMedia.Song) => {
+       [<></>]
+     : filterUndefined(
+         [
++          <BiliVideoButton song={song} key='song-bili-btn' />,
+           <ThumbsUpButton song={song} key='song-thumbup-btn' />,
+           <FavoriteButton song={song} key='song-fav-btn' />,
+         ],
+diff --git a/src/components/buttons/BiliVideoButton.tsx b/src/components/buttons/BiliVideoButton.tsx
+new file mode 100644
+index 0000000..504f7d8
+--- /dev/null
++++ b/src/components/buttons/BiliVideoButton.tsx
+@@ -0,0 +1,39 @@
++import React from 'react';
++
++import useApp from '@stores/useApp';
++import { BiliBiliIconSVG, goToBiliBili } from '../bilibiliIcon';
++
++interface Props {
++  song: NoxMedia.Song;
++}
++
++/**
++ * Player-area shortcut to the song's B站 video page — same idea as 电梓播放器's
++ * `buildExternalLink`: one click on the B站 icon opens the video in a new tab
++ * (with the right page number, thanks to `songExport2URL`).
++ *
++ * Only rendered for B站 sources; the playlist's right-click menu already offers
++ * the same action (`SongMenu` → 前往视频).
++ */
++export default function BiliVideoButton({ song }: Props) {
++  const { buttonStyle } = useApp((state) => state.playerStyle);
++  if (!song?.bvid || !(song.source ?? '').startsWith('bili')) return null;
++
++  return (
++    <span
++      className='group audio-download'
++      // @ts-expect-error emotion css prop is not in the JSX types
++      // eslint-disable-next-line react/no-unknown-property
++      css={buttonStyle}
++      title='前往 B 站视频'
++      role='button'
++      tabIndex={0}
++      onClick={() => goToBiliBili(song)}
++      onKeyDown={(event) => {
++        if (event.key === 'Enter' || event.key === ' ') goToBiliBili(song);
++      }}
++    >
++      <BiliBiliIconSVG />
++    </span>
++  );
++}
 -- 
 2.53.0.windows.3
 

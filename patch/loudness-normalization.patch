@@ -1050,6 +1050,71 @@ index bb293d1..590ae15 100644
        {currentAudio?.id && (
          <LyricOverlay
            showLyric={showLyric}
+diff --git a/src/components/App/ExtendContent.tsx b/src/components/App/ExtendContent.tsx
+index dd45d5f..72ce126 100644
+--- a/src/components/App/ExtendContent.tsx
++++ b/src/components/App/ExtendContent.tsx
+@@ -1,6 +1,7 @@
+ import React from 'react';
+ 
+ import { filterUndefined } from '@utils/Utils';
++import BiliVideoButton from '../buttons/BiliVideoButton';
+ import ThumbsUpButton from '../buttons/ThumbsUpButton';
+ import FavoriteButton from '../buttons/FavoriteSongButton';
+ 
+@@ -10,6 +11,7 @@ const ExtendsContent = (song: NoxMedia.Song) => {
+       [<></>]
+     : filterUndefined(
+         [
++          <BiliVideoButton song={song} key='song-bili-btn' />,
+           <ThumbsUpButton song={song} key='song-thumbup-btn' />,
+           <FavoriteButton song={song} key='song-fav-btn' />,
+         ],
+diff --git a/src/components/buttons/BiliVideoButton.tsx b/src/components/buttons/BiliVideoButton.tsx
+new file mode 100644
+index 0000000..504f7d8
+--- /dev/null
++++ b/src/components/buttons/BiliVideoButton.tsx
+@@ -0,0 +1,39 @@
++import React from 'react';
++
++import useApp from '@stores/useApp';
++import { BiliBiliIconSVG, goToBiliBili } from '../bilibiliIcon';
++
++interface Props {
++  song: NoxMedia.Song;
++}
++
++/**
++ * Player-area shortcut to the song's B站 video page — same idea as 电梓播放器's
++ * `buildExternalLink`: one click on the B站 icon opens the video in a new tab
++ * (with the right page number, thanks to `songExport2URL`).
++ *
++ * Only rendered for B站 sources; the playlist's right-click menu already offers
++ * the same action (`SongMenu` → 前往视频).
++ */
++export default function BiliVideoButton({ song }: Props) {
++  const { buttonStyle } = useApp((state) => state.playerStyle);
++  if (!song?.bvid || !(song.source ?? '').startsWith('bili')) return null;
++
++  return (
++    <span
++      className='group audio-download'
++      // @ts-expect-error emotion css prop is not in the JSX types
++      // eslint-disable-next-line react/no-unknown-property
++      css={buttonStyle}
++      title='前往 B 站视频'
++      role='button'
++      tabIndex={0}
++      onClick={() => goToBiliBili(song)}
++      onKeyDown={(event) => {
++        if (event.key === 'Enter' || event.key === ' ') goToBiliBili(song);
++      }}
++    >
++      <BiliBiliIconSVG />
++    </span>
++  );
++}
 diff --git a/src/components/setting/LoudnessSetting.tsx b/src/components/setting/LoudnessSetting.tsx
 new file mode 100644
 index 0000000..f847ae4
