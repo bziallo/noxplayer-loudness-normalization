@@ -1488,7 +1488,7 @@ index ebaba7b..dd3dc1b 100644
          settingKey='memoryEfficiency'
          callback={globalThis.location.reload}
 diff --git a/src/hooks/usePlayback.ts b/src/hooks/usePlayback.ts
-index f955321..c1d0e3d 100644
+index f955321..62a709e 100644
 --- a/src/hooks/usePlayback.ts
 +++ b/src/hooks/usePlayback.ts
 @@ -1,4 +1,4 @@
@@ -1497,10 +1497,11 @@ index f955321..c1d0e3d 100644
  
  import { fetchPlayUrlPromise } from '@APM/utils/mediafetch/resolveURL';
  import { useNoxSetting } from '@APM/stores/useApp';
-@@ -9,6 +9,18 @@ import { Source } from '@APM/enums/MediaFetch';
+@@ -9,6 +9,19 @@ import { Source } from '@APM/enums/MediaFetch';
  import { DEFAULT_NULL_URL } from '@objects/Song';
  import { MUSICFREE } from '@utils/mediafetch/musicfree';
  import { NoxRepeatModeToRJKM } from '@utils/RJKMUtils';
++import { NoxRepeatMode } from '@enums/RepeatMode';
 +import loudness from '@utils/audio/loudness/normalizeClient';
 +import {
 +  hostOf,
@@ -1516,7 +1517,7 @@ index f955321..c1d0e3d 100644
  import r128gain from '../utils/ffmpeg/r128util';
  import {
    checkBiliVideoPlayed,
-@@ -16,7 +28,10 @@ import {
+@@ -16,7 +29,44 @@ import {
  } from '../utils/Bilibili/BiliOperate';
  import { saveLastPlayDuration } from '../utils/ChromeStorage';
  
@@ -1525,10 +1526,44 @@ index f955321..c1d0e3d 100644
 +const SkipLoudnessSource: (Source | undefined | MUSICFREE)[] = [
 +  Source.biliLive,
 +];
++
++/** Fisher–Yates; returns a new array so callers can keep the original order */
++const shuffled = <T>(items: T[]): T[] => {
++  const out = [...items];
++  for (let i = out.length - 1; i > 0; i -= 1) {
++    const j = Math.floor(Math.random() * (i + 1));
++    const tmp = out[i];
++    out[i] = out[j];
++    out[j] = tmp;
++  }
++  return out;
++};
++
++/**
++ * "随机播放"是否采用**预先排好的随机队列**（B 站本体 / piliplus 的做法）：
++ * 队列顺序固定 → 播放列表里能看到下一首、也能提前测量以免切歌卡顿。
++ * 关掉 `smartShuffle` 时退回 RJKM 的实时随机（顺序不可预知）。
++ */
++const usesPredictableShuffle = (
++  playlist: NoxMedia.Playlist,
++  playerSetting: Partial<NoxStorage.PlayerSettingDict>,
++) =>
++  playlist?.repeatMode === NoxRepeatMode.Shuffle &&
++  playerSetting?.smartShuffle !== false;
++
++/** RJKM 的播放模式：可预知随机 = 按排好的队列顺序循环 */
++const rjkmPlayModeFor = (
++  playlist: NoxMedia.Playlist,
++  playerSetting: Partial<NoxStorage.PlayerSettingDict>,
++  fallback?: string,
++) =>
++  usesPredictableShuffle(playlist, playerSetting)
++    ? 'orderLoop'
++    : (NoxRepeatModeToRJKM[playlist?.repeatMode] ?? fallback);
  
  export default () => {
    const playerSetting = useNoxSetting((state) => state.playerSetting);
-@@ -53,7 +68,7 @@ export default () => {
+@@ -53,7 +103,7 @@ export default () => {
    ) => {
      if (
        !useNoxSetting.getState().playerSetting.r128gain ||
@@ -1537,7 +1572,7 @@ index f955321..c1d0e3d 100644
      ) {
        return;
      }
-@@ -65,17 +80,264 @@ export default () => {
+@@ -65,17 +115,269 @@ export default () => {
      }, 500);
    };
  
@@ -1734,9 +1769,14 @@ index f955321..c1d0e3d 100644
 +      return;
 +    }
 +    const { playMode } = playerSettingNow;
-+    // 单曲循环永远播同一首（已在缓存里）；随机播放的"下一首"此刻还没定，
-+    // 那时由播放前的即时测量兜底（见 prepareBeforePlay）
-+    if (playMode === 'singleLoop' || playMode === 'shufflePlay') return;
++    // 单曲循环永远播同一首（已在缓存里）；只有"关掉 smartShuffle 的真实时随机"
++    // 才无法预知下一首（那时由播放前的即时测量兜底）
++    if (
++      playMode === 'singleLoop' ||
++      (playMode === 'shufflePlay' && playerSettingNow.smartShuffle === false)
++    ) {
++      return;
++    }
 +
 +    const { playingList: list } = useApp.getState();
 +    const index = list.findIndex((s) => s.id === song.id);
@@ -1805,7 +1845,60 @@ index f955321..c1d0e3d 100644
      } catch (e) {
        console.error(`[resolveURL] failed to resolve ${v.bvid}: ${e}`);
        setTimeout(() => currentAudioInst?.playNext?.(), 1000);
-@@ -186,6 +448,8 @@ export default () => {
+@@ -123,12 +425,13 @@ export default () => {
+     favList: NoxMedia.Playlist,
+     rjkm = RJKMref,
+   ) => {
++    const playerSettingNow = useNoxSetting.getState().playerSetting;
+     setTimeout(
+       () =>
+         // @ts-expect-error RJKM type doesnt have updatePlayMode, but it does exist
+         rjkm?.updatePlayMode(
+           // @ts-expect-error updatePlaymode catches null anyways
+-          NoxRepeatModeToRJKM[favList.repeatMode] ?? params?.playMode,
++          rjkmPlayModeFor(favList, playerSettingNow, params?.playMode),
+         ),
+       500,
+     );
+@@ -151,10 +454,14 @@ export default () => {
+       favList,
+       playerSetting.loadPlaylistAsArtist,
+     );
++    // 随机模式：先把队列排好，"下一首"从此可预知（播放列表里也能看到顺序）
++    const queue = usesPredictableShuffle(favList, playerSetting)
++      ? shuffled(parsedSongList)
++      : parsedSongList;
+     updateCurrentAudioList({
+-      songs: parsedSongList,
++      songs: queue,
+       replaceList: true,
+-      newAudioListPlayIndex: parsedSongList.findIndex((s) => s.id === song.id),
++      newAudioListPlayIndex: queue.findIndex((s) => s.id === song.id),
+     });
+     updatePlaylistRepeatMode(favList);
+   };
+@@ -165,14 +472,15 @@ export default () => {
+       favList,
+       playerSetting.loadPlaylistAsArtist,
+     );
++    // 同上：随机模式下先随机好整条队列，再从头（也就是随机的第一首）开始播
++    const queue = usesPredictableShuffle(favList, playerSetting)
++      ? shuffled(parsedSongList)
++      : parsedSongList;
+     updateCurrentAudioList({
+-      songs: parsedSongList,
++      songs: queue,
+       immediatePlay: false,
+       replaceList: true,
+-      newAudioListPlayIndex:
+-        params.playMode === 'shufflePlay'
+-          ? Math.floor(Math.random() * parsedSongList.length) >> 0
+-          : 0,
++      newAudioListPlayIndex: 0,
+     });
+     updatePlaylistRepeatMode(favList);
+   };
+@@ -186,6 +494,8 @@ export default () => {
  
    const onAudioVolumeChange = (currentVolume: number) => {
      // console.log('[RJKM] audio volume change', currentVolume)
@@ -1814,7 +1907,7 @@ index f955321..c1d0e3d 100644
      setPlayerSettings({ defaultVolume: Math.sqrt(currentVolume) });
    };
  
-@@ -242,6 +506,7 @@ export default () => {
+@@ -242,6 +552,7 @@ export default () => {
      setCurrentAudio(audioInfo);
      setCurrentPlayingId(audioInfo.id);
      sendBiliHeartbeat(audioInfo);
@@ -1822,7 +1915,7 @@ index f955321..c1d0e3d 100644
    };
  
    const onAudioError = (
-@@ -250,12 +515,13 @@ export default () => {
+@@ -250,12 +561,13 @@ export default () => {
      _audioLists: NoxMedia.Song[],
      audioInfo: NoxMedia.Song,
    ) => {
@@ -1842,6 +1935,19 @@ index f955321..c1d0e3d 100644
    };
  
    const initPlayer = async (
+@@ -273,6 +585,12 @@ export default () => {
+     const newParams = {
+       ...options,
+       ...playerSetting,
++      // 随机模式按「预排好的队列」顺序播，别让 RJKM 再随机一遍
++      playMode: rjkmPlayModeFor(
++        playlist,
++        playerSetting,
++        playerSetting.playMode,
++      ),
+       audioLists: songList,
+       defaultPlayIndex: previousPlayingSongIndex,
+     };
 diff --git a/src/utils/audio/loudness/bs1770.ts b/src/utils/audio/loudness/bs1770.ts
 new file mode 100644
 index 0000000..350bc62

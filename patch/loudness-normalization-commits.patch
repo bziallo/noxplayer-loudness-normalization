@@ -1,7 +1,7 @@
 From faef93a93d8f771cfe7de0b86db942d032a051af Mon Sep 17 00:00:00 2001
 From: loudness-agent <agent@example.com>
 Date: Tue, 13 Oct 2026 15:01:51 +0800
-Subject: [PATCH 01/12] feat(loudness): whole-track loudness normalization (one
+Subject: [PATCH 01/13] feat(loudness): whole-track loudness normalization (one
  fixed gain per track)
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
@@ -3383,7 +3383,7 @@ index f2217e1..5c261f4 100644
 From 49a8e199b23e6989d432a4b2b1e279ef64a65fa2 Mon Sep 17 00:00:00 2001
 From: loudness-agent <agent@example.com>
 Date: Tue, 13 Oct 2026 15:01:51 +0800
-Subject: [PATCH 02/12] test(loudness): add probe/loudness self checks + docs
+Subject: [PATCH 02/13] test(loudness): add probe/loudness self checks + docs
 
 `node probe/loudness/check.mjs` transpiles the loudness modules with the repo's
 own typescript and checks them without touching the network or the extension:
@@ -3846,7 +3846,7 @@ index 0000000..6899dc1
 From 31ec560aa28bcff34888970b44ef969ea0dc0b3e Mon Sep 17 00:00:00 2001
 From: loudness-agent <agent@example.com>
 Date: Tue, 13 Oct 2026 16:54:58 +0800
-Subject: [PATCH 03/12] chore(loudness): expose a noxLoudness debug handle
+Subject: [PATCH 03/13] chore(loudness): expose a noxLoudness debug handle
 
 Exposes the normalization API (status, gain value, bypass, engine mode) on the
 player page global, mirroring the userscript `__biliLoudness` handle, so that
@@ -3897,7 +3897,7 @@ index 59e4793..894dce7 100644
 From f4b3c4c5bf2788827d05fbb3f4f83852d688236f Mon Sep 17 00:00:00 2001
 From: loudness-agent <agent@example.com>
 Date: Tue, 13 Oct 2026 22:02:18 +0800
-Subject: [PATCH 04/12] feat(failover): retry a dead CDN mirror instead of
+Subject: [PATCH 04/13] feat(failover): retry a dead CDN mirror instead of
  never playing
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
@@ -4604,7 +4604,7 @@ index 0000000..f2f09e2
 From 6fefb8fc18087170d698f8b24ce4bf71ddab41ef Mon Sep 17 00:00:00 2001
 From: loudness-agent <agent@example.com>
 Date: Tue, 13 Oct 2026 22:04:35 +0800
-Subject: [PATCH 05/12] feat(covers): retry a cover image on another hdslb
+Subject: [PATCH 05/13] feat(covers): retry a cover image on another hdslb
  shard
 
 i0/i1/i2.hdslb.com are replicas of the same object store (verified: the same
@@ -4712,7 +4712,7 @@ index 0000000..f616ba1
 From 3b3a89a05d1a716c5f1405541ecf0a56834dddad Mon Sep 17 00:00:00 2001
 From: loudness-agent <agent@example.com>
 Date: Tue, 13 Oct 2026 22:16:47 +0800
-Subject: [PATCH 06/12] feat(failover): remember dead hosts, probe instead of
+Subject: [PATCH 06/13] feat(failover): remember dead hosts, probe instead of
  waiting
 
 The previous failover still felt broken on a network that cannot reach one
@@ -5052,7 +5052,7 @@ index f2f09e2..7b9592d 100644
 From 8c34c660648c23d3c63147d387ec5f9f44bdad4c Mon Sep 17 00:00:00 2001
 From: loudness-agent <agent@example.com>
 Date: Tue, 13 Oct 2026 22:36:18 +0800
-Subject: [PATCH 07/12] perf(failover): first answering mirror wins; skip fast
+Subject: [PATCH 07/13] perf(failover): first answering mirror wins; skip fast
  when several hosts are down
 
 - pickLiveMirror resolves on the first successful probe instead of waiting for
@@ -5172,7 +5172,7 @@ index 7b9592d..f6bf861 100644
 From f32b9d25c2579738e6c2c192ad84ebab115b45b8 Mon Sep 17 00:00:00 2001
 From: loudness-agent <agent@example.com>
 Date: Wed, 14 Oct 2026 12:14:12 +0800
-Subject: [PATCH 08/12] =?UTF-8?q?feat(loudness):=20add=20=E5=93=8D?=
+Subject: [PATCH 08/13] =?UTF-8?q?feat(loudness):=20add=20=E5=93=8D?=
  =?UTF-8?q?=E5=BA=A6=E5=BD=92=E4=B8=80=E7=8B=AC=E5=8D=A0=E6=A8=A1=E5=BC=8F?=
  =?UTF-8?q?=20(exactly=20one=20loudness=20system)?=
 MIME-Version: 1.0
@@ -5457,7 +5457,7 @@ index 3a577a8..8274cfa 100644
 From 00c2c33bfef866fc324c4534868e41b543329103 Mon Sep 17 00:00:00 2001
 From: loudness-agent <agent@example.com>
 Date: Wed, 14 Oct 2026 12:23:47 +0800
-Subject: [PATCH 09/12] =?UTF-8?q?feat(player):=20click=20the=20B=E7=AB=99?=
+Subject: [PATCH 09/13] =?UTF-8?q?feat(player):=20click=20the=20B=E7=AB=99?=
  =?UTF-8?q?=20icon=20in=20the=20player=20to=20open=20the=20video?=
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
@@ -5546,7 +5546,7 @@ index 0000000..504f7d8
 From 10ba8b450f5d9cd251ade33eafb602d275fbd245 Mon Sep 17 00:00:00 2001
 From: loudness-agent <agent@example.com>
 Date: Wed, 14 Oct 2026 13:26:27 +0800
-Subject: [PATCH 10/12] style(loudness): move the two intro texts into hover
+Subject: [PATCH 10/13] style(loudness): move the two intro texts into hover
  tooltips
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
@@ -5680,7 +5680,7 @@ index f847ae4..6d99554 100644
 From d1e9bdc54243822d1c3a24ed45a3edf76e20af4a Mon Sep 17 00:00:00 2001
 From: loudness-agent <agent@example.com>
 Date: Thu, 15 Oct 2026 18:07:28 +0800
-Subject: [PATCH 11/12] feat(loudness): measure before playback so tracks never
+Subject: [PATCH 11/13] feat(loudness): measure before playback so tracks never
  change level mid-song
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
@@ -5974,7 +5974,7 @@ index 8274cfa..612a8a2 100644
 From 2ab6c3b978e0eca1e23c46dc0f29e4fdfaccd0aa Mon Sep 17 00:00:00 2001
 From: loudness-agent <agent@example.com>
 Date: Thu, 15 Oct 2026 18:18:05 +0800
-Subject: [PATCH 12/12] =?UTF-8?q?feat(loudness):=20seamless=20switching=20?=
+Subject: [PATCH 12/13] =?UTF-8?q?feat(loudness):=20seamless=20switching=20?=
  =?UTF-8?q?=E2=80=94=20prefetch=20earlier,=20pre-measure=20always=20on?=
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
@@ -6079,6 +6079,171 @@ index bca8886..c1d0e3d 100644
    };
  
    const musicSrcParser = async (v: NoxMedia.Song) => {
+-- 
+2.53.0.windows.3
+
+
+From 0c437ea04ae9271f736dd8e7130b04df5740662c Mon Sep 17 00:00:00 2001
+From: loudness-agent <agent@example.com>
+Date: Thu, 15 Oct 2026 18:30:46 +0800
+Subject: [PATCH 13/13] =?UTF-8?q?feat(shuffle):=20predictable=20shuffle=20?=
+ =?UTF-8?q?=E2=80=94=20pre-shuffle=20the=20queue,=20then=20play=20it=20in?=
+ =?UTF-8?q?=20order?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+B站本体/piliplus 把随机顺序预先排好，本播放器原来却同时做了两件事：smartShuffle
+把队列洗了一遍，RJKM 的 'shufflePlay' 又按实时随机再洗一遍 —— 于是下一首不可预知，
+无损预取也总会猜错歌。
+
+- shuffle mode now shuffles the queue once (Fisher-Yates) when it is loaded/played,
+  and the player runs it in order ('orderLoop'), so the queue panel shows what is
+  coming next and the next-track prefetch is always right
+- 点歌/播歌单都走同一套；随机顺序从队列第一首开始播
+- smartShuffle=false 时保持旧的实时随机（那种情况才真的不可预知，仍由播放前测量兜底）
+- 存进歌单的顺序不受影响（只重排播放队列）
+---
+ src/hooks/usePlayback.ts | 74 ++++++++++++++++++++++++++++++++++------
+ 1 file changed, 63 insertions(+), 11 deletions(-)
+
+diff --git a/src/hooks/usePlayback.ts b/src/hooks/usePlayback.ts
+index c1d0e3d..62a709e 100644
+--- a/src/hooks/usePlayback.ts
++++ b/src/hooks/usePlayback.ts
+@@ -9,6 +9,7 @@ import { Source } from '@APM/enums/MediaFetch';
+ import { DEFAULT_NULL_URL } from '@objects/Song';
+ import { MUSICFREE } from '@utils/mediafetch/musicfree';
+ import { NoxRepeatModeToRJKM } from '@utils/RJKMUtils';
++import { NoxRepeatMode } from '@enums/RepeatMode';
+ import loudness from '@utils/audio/loudness/normalizeClient';
+ import {
+   hostOf,
+@@ -33,6 +34,40 @@ const SkipLoudnessSource: (Source | undefined | MUSICFREE)[] = [
+   Source.biliLive,
+ ];
+ 
++/** Fisher–Yates; returns a new array so callers can keep the original order */
++const shuffled = <T>(items: T[]): T[] => {
++  const out = [...items];
++  for (let i = out.length - 1; i > 0; i -= 1) {
++    const j = Math.floor(Math.random() * (i + 1));
++    const tmp = out[i];
++    out[i] = out[j];
++    out[j] = tmp;
++  }
++  return out;
++};
++
++/**
++ * "随机播放"是否采用**预先排好的随机队列**（B 站本体 / piliplus 的做法）：
++ * 队列顺序固定 → 播放列表里能看到下一首、也能提前测量以免切歌卡顿。
++ * 关掉 `smartShuffle` 时退回 RJKM 的实时随机（顺序不可预知）。
++ */
++const usesPredictableShuffle = (
++  playlist: NoxMedia.Playlist,
++  playerSetting: Partial<NoxStorage.PlayerSettingDict>,
++) =>
++  playlist?.repeatMode === NoxRepeatMode.Shuffle &&
++  playerSetting?.smartShuffle !== false;
++
++/** RJKM 的播放模式：可预知随机 = 按排好的队列顺序循环 */
++const rjkmPlayModeFor = (
++  playlist: NoxMedia.Playlist,
++  playerSetting: Partial<NoxStorage.PlayerSettingDict>,
++  fallback?: string,
++) =>
++  usesPredictableShuffle(playlist, playerSetting)
++    ? 'orderLoop'
++    : (NoxRepeatModeToRJKM[playlist?.repeatMode] ?? fallback);
++
+ export default () => {
+   const playerSetting = useNoxSetting((state) => state.playerSetting);
+   const currentPlayingId = useNoxSetting((state) => state.currentPlayingId);
+@@ -273,9 +308,14 @@ export default () => {
+       return;
+     }
+     const { playMode } = playerSettingNow;
+-    // 单曲循环永远播同一首（已在缓存里）；随机播放的"下一首"此刻还没定，
+-    // 那时由播放前的即时测量兜底（见 prepareBeforePlay）
+-    if (playMode === 'singleLoop' || playMode === 'shufflePlay') return;
++    // 单曲循环永远播同一首（已在缓存里）；只有"关掉 smartShuffle 的真实时随机"
++    // 才无法预知下一首（那时由播放前的即时测量兜底）
++    if (
++      playMode === 'singleLoop' ||
++      (playMode === 'shufflePlay' && playerSettingNow.smartShuffle === false)
++    ) {
++      return;
++    }
+ 
+     const { playingList: list } = useApp.getState();
+     const index = list.findIndex((s) => s.id === song.id);
+@@ -385,12 +425,13 @@ export default () => {
+     favList: NoxMedia.Playlist,
+     rjkm = RJKMref,
+   ) => {
++    const playerSettingNow = useNoxSetting.getState().playerSetting;
+     setTimeout(
+       () =>
+         // @ts-expect-error RJKM type doesnt have updatePlayMode, but it does exist
+         rjkm?.updatePlayMode(
+           // @ts-expect-error updatePlaymode catches null anyways
+-          NoxRepeatModeToRJKM[favList.repeatMode] ?? params?.playMode,
++          rjkmPlayModeFor(favList, playerSettingNow, params?.playMode),
+         ),
+       500,
+     );
+@@ -413,10 +454,14 @@ export default () => {
+       favList,
+       playerSetting.loadPlaylistAsArtist,
+     );
++    // 随机模式：先把队列排好，"下一首"从此可预知（播放列表里也能看到顺序）
++    const queue = usesPredictableShuffle(favList, playerSetting)
++      ? shuffled(parsedSongList)
++      : parsedSongList;
+     updateCurrentAudioList({
+-      songs: parsedSongList,
++      songs: queue,
+       replaceList: true,
+-      newAudioListPlayIndex: parsedSongList.findIndex((s) => s.id === song.id),
++      newAudioListPlayIndex: queue.findIndex((s) => s.id === song.id),
+     });
+     updatePlaylistRepeatMode(favList);
+   };
+@@ -427,14 +472,15 @@ export default () => {
+       favList,
+       playerSetting.loadPlaylistAsArtist,
+     );
++    // 同上：随机模式下先随机好整条队列，再从头（也就是随机的第一首）开始播
++    const queue = usesPredictableShuffle(favList, playerSetting)
++      ? shuffled(parsedSongList)
++      : parsedSongList;
+     updateCurrentAudioList({
+-      songs: parsedSongList,
++      songs: queue,
+       immediatePlay: false,
+       replaceList: true,
+-      newAudioListPlayIndex:
+-        params.playMode === 'shufflePlay'
+-          ? Math.floor(Math.random() * parsedSongList.length) >> 0
+-          : 0,
++      newAudioListPlayIndex: 0,
+     });
+     updatePlaylistRepeatMode(favList);
+   };
+@@ -539,6 +585,12 @@ export default () => {
+     const newParams = {
+       ...options,
+       ...playerSetting,
++      // 随机模式按「预排好的队列」顺序播，别让 RJKM 再随机一遍
++      playMode: rjkmPlayModeFor(
++        playlist,
++        playerSetting,
++        playerSetting.playMode,
++      ),
+       audioLists: songList,
+       defaultPlayIndex: previousPlayingSongIndex,
+     };
 -- 
 2.53.0.windows.3
 
