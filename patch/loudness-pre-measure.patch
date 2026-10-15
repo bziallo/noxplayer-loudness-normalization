@@ -1,0 +1,263 @@
+diff --git a/src/NoxTypes/loudness.d.ts b/src/NoxTypes/loudness.d.ts
+index ce76e5c..be8a15d 100644
+--- a/src/NoxTypes/loudness.d.ts
++++ b/src/NoxTypes/loudness.d.ts
+@@ -27,5 +27,11 @@ declare namespace NoxStorage {
+      * system (this one, when enabled) is in charge.
+      */
+     loudnessExclusive?: boolean;
++    /**
++     * Measure before playback starts so the first sample is already at the
++     * final level (uncached tracks start a bit later instead of changing
++     * volume mid-song). Default: true.
++     */
++    loudnessPreMeasure?: boolean;
+   }
+ }
+diff --git a/src/components/App/App.tsx b/src/components/App/App.tsx
+index 590ae15..78b4c84 100644
+--- a/src/components/App/App.tsx
++++ b/src/components/App/App.tsx
+@@ -8,6 +8,8 @@ import usePlayback from '@hooks/usePlayback';
+ import useApp from '@stores/useApp';
+ import usePlaybackCount from '@hooks/usePlaybackCount';
+ import { useNoxSetting } from '@APM/stores/useApp';
++import loudness from '@utils/audio/loudness/normalizeClient';
++import { LoudnessStatus } from '@utils/audio/loudness/types';
+ import { FavList } from '../Playlists/Player';
+ import LyricOverlay from '../lyric/LyricOverlay';
+ import Options from './Enum';
+@@ -47,6 +49,9 @@ export default function Player({ playlist, lastPlayDuration }: Props) {
+   const playerSetting = useNoxSetting((state) => state.playerSetting);
+   const setPlayerSetting = useNoxSetting((state) => state.setPlayerSetting);
+   const [initialized, setInitialized] = React.useState(false);
++  const [loudnessStatus, setLoudnessStatus] = React.useState<LoudnessStatus>();
++
++  React.useEffect(() => loudness.subscribeStatus(setLoudnessStatus), []);
+ 
+   useHotkeys('space', () => {
+     if (!currentAudioInst) return;
+@@ -91,6 +96,27 @@ export default function Player({ playlist, lastPlayDuration }: Props) {
+   return (
+     <React.Fragment>
+       <FavList />
++      {/* 换歌时如果正在"先测后播"，给个明确的提示 */}
++      {loudnessStatus?.stage === 'measuring' && (
++        <div
++          style={{
++            position: 'fixed',
++            top: 34,
++            right: 12,
++            zIndex: 2000,
++            padding: '2px 10px',
++            borderRadius: 12,
++            fontSize: 12,
++            lineHeight: '18px',
++            color: '#fff',
++            background: 'rgba(0,0,0,.55)',
++            pointerEvents: 'none',
++            userSelect: 'none',
++          }}
++        >
++          ⏳ 测量响度中…
++        </div>
++      )}
+       {/* Exclusive mode badge: make it obvious which system owns the volume */}
+       {playerSetting.loudnessExclusive === true && (
+         <div
+diff --git a/src/components/setting/LoudnessSetting.tsx b/src/components/setting/LoudnessSetting.tsx
+index 6d99554..80f619c 100644
+--- a/src/components/setting/LoudnessSetting.tsx
++++ b/src/components/setting/LoudnessSetting.tsx
+@@ -63,6 +63,11 @@ const NORMALIZE_HELP =
+   '先量完整首/整段的集成响度，再对这一个视频施加一个常数增益；' +
+   '不做实时压缩，动态范围原样保留。首次播放要等一小会儿，之后走缓存。';
+ 
++const PREMEASURE_HELP =
++  '开启后换歌时"先测好、再开播"：这首的响度测量完成、固定增益已经落位，播放器才开始出声，' +
++  '所以开头不会再出现音量突然变大/变小。代价是没缓存过的歌会多等约 0.5–2 秒；' +
++  '缓存命中或提前预取过的歌是瞬时的。关闭后回到"先播原声、测完再平滑落位"的行为。';
++
+ export default function LoudnessSetting() {
+   const playerSetting = useNoxSetting((state) => state.playerSetting);
+   const setPlayerSetting = useNoxSetting((state) => state.setPlayerSetting);
+@@ -117,6 +122,25 @@ export default function LoudnessSetting() {
+         />
+       </Tooltip>
+ 
++      <Tooltip title={PREMEASURE_HELP} placement='right' arrow enterDelay={300}>
++        <FormControlLabel
++          control={
++            <Checkbox
++              checked={playerSetting.loudnessPreMeasure !== false}
++              onChange={(e) =>
++                setPlayerSetting({ loudnessPreMeasure: e.target.checked })
++              }
++            />
++          }
++          label={
++            <span style={LABEL_STYLE}>
++              播放前先测好（避免开头音量突变）
++              <InfoOutlinedIcon sx={INFO_ICON_SX} />
++            </span>
++          }
++        />
++      </Tooltip>
++
+       <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', mt: 1 }}>
+         <FormControl size='small' sx={{ minWidth: 160 }}>
+           <InputLabel id='loudness-profile-label'>响度档案</InputLabel>
+diff --git a/src/hooks/usePlayback.ts b/src/hooks/usePlayback.ts
+index 1b012df..bca8886 100644
+--- a/src/hooks/usePlayback.ts
++++ b/src/hooks/usePlayback.ts
+@@ -103,11 +103,19 @@ export default () => {
+    * The synchronous part runs before the player swaps `src`, so the gain of a
+    * cached track is already in place when its first sample is audible.
+    */
+-  const normalizeLoudness = (song: NoxMedia.Song, url: string) => {
++  const normalizeLoudness = async (song: NoxMedia.Song, url: string) => {
+     if (SkipLoudnessSource.includes(song.source)) return;
+     const options = loudnessOptions(song, url);
++    // cached tracks land synchronously; uncached ones are pre-measured below
+     loudness.resolveForPlayback(options);
+-    loudness.normalizeSong(options).catch(() => undefined);
++    if (options.playerSetting.loudnessPreMeasure !== false) {
++      // measure (bounded) before playback so the track never changes level
++      // midway; if it does not finish in time, the old background path takes
++      // over and the gain lands with a short ramp
++      await loudness.prepareBeforePlay(options);
++    } else {
++      loudness.normalizeSong(options).catch(() => undefined);
++    }
+   };
+ 
+   /** the track whose stream is currently loaded (mirror failover needs it) */
+@@ -180,14 +188,19 @@ export default () => {
+         `[failover] ${song.bvid}: 换到可用镜像 ${hostOf(mirror)} 继续播`,
+       );
+       loudness.resetPlaybackFailed(song.id);
+-      el.src = mirror;
+-      el.load();
+-      await el.play().catch(() => undefined);
+       const options = loudnessOptions(song, mirror);
+       if (options.playerSetting.loudnessNormalize === true) {
+         loudness.resolveForPlayback(options);
+-        loudness.normalizeSong(options).catch(() => undefined);
++        // same "measure before it is audible" rule as a normal track start
++        if (options.playerSetting.loudnessPreMeasure !== false) {
++          await loudness.prepareBeforePlay(options);
++        } else {
++          loudness.normalizeSong(options).catch(() => undefined);
++        }
+       }
++      el.src = mirror;
++      el.load();
++      await el.play().catch(() => undefined);
+     } catch (e) {
+       console.warn(`[failover] ${song.bvid}: 重试也失败了（${e}）`);
+       el.playNext?.();
+@@ -285,7 +298,7 @@ export default () => {
+           playerSetting: playerSettingNow,
+         })
+         .catch(() => undefined);
+-    }, 5000);
++    }, 3000);
+   };
+ 
+   const musicSrcParser = async (v: NoxMedia.Song) => {
+@@ -308,7 +321,7 @@ export default () => {
+       resetMirrors(v.id);
+       loudness.resetPlaybackFailed(v.id);
+       if (settingNow.loudnessNormalize === true) {
+-        normalizeLoudness(v, playableUrl);
++        await normalizeLoudness(v, playableUrl);
+       } else if (!exclusive) {
+         // legacy replaygain path, kept for the pre-existing `r128gain` switch
+         // (skipped in exclusive mode: it writes audio.volume)
+diff --git a/src/utils/audio/loudness/normalizeClient.ts b/src/utils/audio/loudness/normalizeClient.ts
+index 8274cfa..612a8a2 100644
+--- a/src/utils/audio/loudness/normalizeClient.ts
++++ b/src/utils/audio/loudness/normalizeClient.ts
+@@ -63,6 +63,12 @@ export interface NormalizeOptions {
+   mediaElement?: HTMLAudioElement | null;
+   /** measure + cache only (next track prefetch): never touches the output */
+   prefetchOnly?: boolean;
++  /**
++   * Measure right now instead of waiting for playback to start. Used by
++   * `prepareBeforePlay`, where the gain must be in place *before* the first
++   * sample is audible.
++   */
++  measureImmediately?: boolean;
+ }
+ 
+ /* ------------------------------------------------------------- settings */
+@@ -431,8 +437,11 @@ export const normalizeSong = async (opts: NormalizeOptions) => {
+ 
+   const run = async (attempt: number): Promise<LoudnessStatus> => {
+     try {
+-      // do not compete for bandwidth with a stream that has not started yet
+-      await waitForPlaybackStart(opts.mediaElement, opts.url);
++      // do not compete for bandwidth with a stream that has not started yet —
++      // unless the caller is deliberately measuring up front
++      if (!opts.measureImmediately) {
++        await waitForPlaybackStart(opts.mediaElement, opts.url);
++      }
+       if (opts.mediaElement?.error) {
+         throw measurementError(
+           'playback-failed',
+@@ -511,6 +520,46 @@ export const normalizeSong = async (opts: NormalizeOptions) => {
+ export const prefetchSong = (opts: Omit<NormalizeOptions, 'prefetchOnly'>) =>
+   normalizeSong({ ...opts, prefetchOnly: true });
+ 
++/**
++ * Measure (and land) the gain *before* the track starts playing, so the first
++ * sample is already at the right level — no "it gets quieter/louder after two
++ * seconds" surprise.
++ *
++ * Cached tracks return instantly; uncached ones block for at most `timeoutMs`
++ * (the measurement keeps running in the background afterwards, exactly like the
++ * old behaviour, when it does not finish in time).
++ */
++export const prepareBeforePlay = async (
++  opts: NormalizeOptions,
++  timeoutMs = 4000,
++) => {
++  const setting = resolveLoudnessSetting(opts.playerSetting);
++  if (!setting.enabled || setting.bypass) return lastStatus;
++  // a cache hit was already applied synchronously by resolveForPlayback
++  if (memCache.has(opts.song.id)) return lastStatus;
++
++  emitStatus({
++    songId: opts.song.id,
++    name: opts.song.name,
++    stage: 'measuring',
++    reason: '播放前测量中（避免开头音量突变）',
++  });
++
++  let timer: ReturnType<typeof setTimeout> | undefined;
++  const cap = new Promise<void>((resolve) => {
++    timer = setTimeout(resolve, timeoutMs);
++  });
++  try {
++    await Promise.race([
++      normalizeSong({ ...opts, measureImmediately: true }),
++      cap,
++    ]);
++  } finally {
++    if (timer) clearTimeout(timer);
++  }
++  return lastStatus;
++};
++
+ /** Drop every cached measurement (memory + database). */
+ export const clearLoudnessCache = async () => {
+   memCache.clear();
+@@ -542,6 +591,7 @@ const api = {
+   isWritingVolume,
+   markPlaybackFailed,
+   resetPlaybackFailed,
++  prepareBeforePlay,
+   /** the Web Audio side: getGainValue(), getMode(), setBypass(), … */
+   engine: loudnessEngine,
+ };
