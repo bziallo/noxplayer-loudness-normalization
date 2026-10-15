@@ -56,6 +56,21 @@ NoxPlayer 原本用 ffmpeg.wasm 的 `replaygain` 处理这个问题：要把**�
 
 ## 更新日志
 
+**2026-10-15c｜播放列表面板 = 实际播放顺序（随机队列真正同步）**
+
+- 上一版只是"载入队列时先随机好"，但**面板顺序依旧和播放顺序对不上**：内核的随机是
+  一张**预先算好的乱序索引表**，面板渲染的却是队列数组本身 —— 这一版让索引表**跟随队列顺序**，
+  于是面板里看到的下一首就是真的下一首（B 站本体 / piliplus 的做法）；
+- 启动、点歌、播歌单、"全歌单播放"四条路径**统一**走同一套排队列逻辑（上一版漏了启动和全歌单播放）；
+- **切随机 / 切回顺序时不再打断正在播的那首**：只重排队列，进度、音量、当前播放项都不动
+  （以前会重新加载音频、进度回到 0）；
+- 每首歌在队列里带一个**稳定 key**，内核重排后依然认得"还是这首"；顺带修掉内核在换列表时
+  `playIndex` 被归零、"下一首"跳到不相干歌曲的问题；
+- 队列项只是**带 key 的副本**：歌单里保存的顺序、内容都不受影响，也不落盘；
+- 播放内核（`lovegaoshi/react-music-player`）需要一处配套补丁：`patch/rjkm-fork-queue-sync.patch`
+  （4 处改动都绑定宿主显式传的开关，其它调用方行为不变），细节与测试见
+  [`docs/07-随机队列与播放顺序同步.md`](docs/07-随机队列与播放顺序同步.md)。
+
 **2026-10-15b｜随机播放变成"可预知"（预排队列）**
 
 - 随机模式**不再交给播放器实时乱选**：载入队列时就把顺序随机好，然后按这个顺序播 ——
@@ -224,12 +239,20 @@ node probe/loudness/check.mjs         # 期望：32 passed, 0 failed
 
 ## 与上游的关系 / 怎么合并
 
-补丁基于 `lovegaoshi/NoxPlayer` 的 `dev` 分支（基线 commit `90e942f`），改动 25 个文件：
+补丁基于 `lovegaoshi/NoxPlayer` 的 `dev` 分支（基线 commit `90e942f`），改动 31 个文件：
 
 ```bash
 git apply patch/loudness-normalization.patch          # 一次应用
 # 或保留提交信息：
-git am patch/loudness-normalization-commits.patch     # 三个提交
+git am patch/loudness-normalization-commits.patch     # 十四个提交
+```
+
+播放内核 `react-jinke-music-player`（上游是 `lovegaoshi/react-music-player` 的 git 依赖）另有一处
+配套补丁，装好依赖后应用并重编译：
+
+```bash
+git apply --directory=node_modules/react-jinke-music-player patch/rjkm-fork-queue-sync.patch
+node tools/build-rjkm-fork.mjs .                       # 重新生成 lib/ + es/
 ```
 
 新增文件集中在 `src/utils/audio/loudness/`（响度核心 + 采样器 + 增益图 + 编排）、

@@ -8,7 +8,7 @@
 |---|---|---|---|
 | 电闹播放器 / NoxPlayer | https://github.com/lovegaoshi/NoxPlayer | **AGPL-3.0**（仓库 `LICENSE`；`package.json` 中标注为 MIT，以前者为准） | 补丁修改其源码；本仓库按 AGPL-3.0 发布 |
 | Bilibili_LoudNorm（响度归一油猴脚本） | https://github.com/ADMA200/Bilibili_LoudNorm | **MIT**，(c) 2026 Moxia9527 | 响度测量算法（sidx 抽样、BS.1770 集成响度、真峰值、增益预算、Web Audio 增益图）移植为 TypeScript，见 `patch/` 中 `src/utils/audio/loudness/*`，每个文件头部保留出处声明 |
-| react-jinke-music-player（播放内核 fork） | https://github.com/lovegaoshi/react-music-player | MIT | 上游依赖，未修改（自己构建时由 yarn 拉取） |
+| react-jinke-music-player（播放内核 fork） | https://github.com/lovegaoshi/react-music-player | MIT | 上游依赖；为"队列顺序 = 播放顺序、重排不打断当前歌"加了一处行为补丁，见 `patch/rjkm-fork-queue-sync.patch`（4 处改动，均由宿主显式传参触发，其它调用方行为不变） |
 | azusa-player-mobile（解析/数据共享库） | https://github.com/lovegaoshi/azusa-player-mobile | AGPL-3.0 | 上游子模块，**本补丁未修改** |
 
 ## 关于 AGPL-3.0

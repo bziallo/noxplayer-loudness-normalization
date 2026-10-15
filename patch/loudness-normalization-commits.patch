@@ -1,7 +1,7 @@
 From faef93a93d8f771cfe7de0b86db942d032a051af Mon Sep 17 00:00:00 2001
 From: loudness-agent <agent@example.com>
 Date: Tue, 13 Oct 2026 15:01:51 +0800
-Subject: [PATCH 01/13] feat(loudness): whole-track loudness normalization (one
+Subject: [PATCH 01/14] feat(loudness): whole-track loudness normalization (one
  fixed gain per track)
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
@@ -3383,7 +3383,7 @@ index f2217e1..5c261f4 100644
 From 49a8e199b23e6989d432a4b2b1e279ef64a65fa2 Mon Sep 17 00:00:00 2001
 From: loudness-agent <agent@example.com>
 Date: Tue, 13 Oct 2026 15:01:51 +0800
-Subject: [PATCH 02/13] test(loudness): add probe/loudness self checks + docs
+Subject: [PATCH 02/14] test(loudness): add probe/loudness self checks + docs
 
 `node probe/loudness/check.mjs` transpiles the loudness modules with the repo's
 own typescript and checks them without touching the network or the extension:
@@ -3846,7 +3846,7 @@ index 0000000..6899dc1
 From 31ec560aa28bcff34888970b44ef969ea0dc0b3e Mon Sep 17 00:00:00 2001
 From: loudness-agent <agent@example.com>
 Date: Tue, 13 Oct 2026 16:54:58 +0800
-Subject: [PATCH 03/13] chore(loudness): expose a noxLoudness debug handle
+Subject: [PATCH 03/14] chore(loudness): expose a noxLoudness debug handle
 
 Exposes the normalization API (status, gain value, bypass, engine mode) on the
 player page global, mirroring the userscript `__biliLoudness` handle, so that
@@ -3897,7 +3897,7 @@ index 59e4793..894dce7 100644
 From f4b3c4c5bf2788827d05fbb3f4f83852d688236f Mon Sep 17 00:00:00 2001
 From: loudness-agent <agent@example.com>
 Date: Tue, 13 Oct 2026 22:02:18 +0800
-Subject: [PATCH 04/13] feat(failover): retry a dead CDN mirror instead of
+Subject: [PATCH 04/14] feat(failover): retry a dead CDN mirror instead of
  never playing
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
@@ -4604,7 +4604,7 @@ index 0000000..f2f09e2
 From 6fefb8fc18087170d698f8b24ce4bf71ddab41ef Mon Sep 17 00:00:00 2001
 From: loudness-agent <agent@example.com>
 Date: Tue, 13 Oct 2026 22:04:35 +0800
-Subject: [PATCH 05/13] feat(covers): retry a cover image on another hdslb
+Subject: [PATCH 05/14] feat(covers): retry a cover image on another hdslb
  shard
 
 i0/i1/i2.hdslb.com are replicas of the same object store (verified: the same
@@ -4712,7 +4712,7 @@ index 0000000..f616ba1
 From 3b3a89a05d1a716c5f1405541ecf0a56834dddad Mon Sep 17 00:00:00 2001
 From: loudness-agent <agent@example.com>
 Date: Tue, 13 Oct 2026 22:16:47 +0800
-Subject: [PATCH 06/13] feat(failover): remember dead hosts, probe instead of
+Subject: [PATCH 06/14] feat(failover): remember dead hosts, probe instead of
  waiting
 
 The previous failover still felt broken on a network that cannot reach one
@@ -5052,7 +5052,7 @@ index f2f09e2..7b9592d 100644
 From 8c34c660648c23d3c63147d387ec5f9f44bdad4c Mon Sep 17 00:00:00 2001
 From: loudness-agent <agent@example.com>
 Date: Tue, 13 Oct 2026 22:36:18 +0800
-Subject: [PATCH 07/13] perf(failover): first answering mirror wins; skip fast
+Subject: [PATCH 07/14] perf(failover): first answering mirror wins; skip fast
  when several hosts are down
 
 - pickLiveMirror resolves on the first successful probe instead of waiting for
@@ -5172,7 +5172,7 @@ index 7b9592d..f6bf861 100644
 From f32b9d25c2579738e6c2c192ad84ebab115b45b8 Mon Sep 17 00:00:00 2001
 From: loudness-agent <agent@example.com>
 Date: Wed, 14 Oct 2026 12:14:12 +0800
-Subject: [PATCH 08/13] =?UTF-8?q?feat(loudness):=20add=20=E5=93=8D?=
+Subject: [PATCH 08/14] =?UTF-8?q?feat(loudness):=20add=20=E5=93=8D?=
  =?UTF-8?q?=E5=BA=A6=E5=BD=92=E4=B8=80=E7=8B=AC=E5=8D=A0=E6=A8=A1=E5=BC=8F?=
  =?UTF-8?q?=20(exactly=20one=20loudness=20system)?=
 MIME-Version: 1.0
@@ -5457,7 +5457,7 @@ index 3a577a8..8274cfa 100644
 From 00c2c33bfef866fc324c4534868e41b543329103 Mon Sep 17 00:00:00 2001
 From: loudness-agent <agent@example.com>
 Date: Wed, 14 Oct 2026 12:23:47 +0800
-Subject: [PATCH 09/13] =?UTF-8?q?feat(player):=20click=20the=20B=E7=AB=99?=
+Subject: [PATCH 09/14] =?UTF-8?q?feat(player):=20click=20the=20B=E7=AB=99?=
  =?UTF-8?q?=20icon=20in=20the=20player=20to=20open=20the=20video?=
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
@@ -5546,7 +5546,7 @@ index 0000000..504f7d8
 From 10ba8b450f5d9cd251ade33eafb602d275fbd245 Mon Sep 17 00:00:00 2001
 From: loudness-agent <agent@example.com>
 Date: Wed, 14 Oct 2026 13:26:27 +0800
-Subject: [PATCH 10/13] style(loudness): move the two intro texts into hover
+Subject: [PATCH 10/14] style(loudness): move the two intro texts into hover
  tooltips
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
@@ -5680,7 +5680,7 @@ index f847ae4..6d99554 100644
 From d1e9bdc54243822d1c3a24ed45a3edf76e20af4a Mon Sep 17 00:00:00 2001
 From: loudness-agent <agent@example.com>
 Date: Thu, 15 Oct 2026 18:07:28 +0800
-Subject: [PATCH 11/13] feat(loudness): measure before playback so tracks never
+Subject: [PATCH 11/14] feat(loudness): measure before playback so tracks never
  change level mid-song
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
@@ -5974,7 +5974,7 @@ index 8274cfa..612a8a2 100644
 From 2ab6c3b978e0eca1e23c46dc0f29e4fdfaccd0aa Mon Sep 17 00:00:00 2001
 From: loudness-agent <agent@example.com>
 Date: Thu, 15 Oct 2026 18:18:05 +0800
-Subject: [PATCH 12/13] =?UTF-8?q?feat(loudness):=20seamless=20switching=20?=
+Subject: [PATCH 12/14] =?UTF-8?q?feat(loudness):=20seamless=20switching=20?=
  =?UTF-8?q?=E2=80=94=20prefetch=20earlier,=20pre-measure=20always=20on?=
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
@@ -6086,7 +6086,7 @@ index bca8886..c1d0e3d 100644
 From 0c437ea04ae9271f736dd8e7130b04df5740662c Mon Sep 17 00:00:00 2001
 From: loudness-agent <agent@example.com>
 Date: Thu, 15 Oct 2026 18:30:46 +0800
-Subject: [PATCH 13/13] =?UTF-8?q?feat(shuffle):=20predictable=20shuffle=20?=
+Subject: [PATCH 13/14] =?UTF-8?q?feat(shuffle):=20predictable=20shuffle=20?=
  =?UTF-8?q?=E2=80=94=20pre-shuffle=20the=20queue,=20then=20play=20it=20in?=
  =?UTF-8?q?=20order?=
 MIME-Version: 1.0
@@ -6244,6 +6244,373 @@ index c1d0e3d..62a709e 100644
        audioLists: songList,
        defaultPlayIndex: previousPlayingSongIndex,
      };
+-- 
+2.53.0.windows.3
+
+
+From 6f16b1c9f12194758bc5ab7b52f7e844dff50d73 Mon Sep 17 00:00:00 2001
+From: loudness-agent <agent@example.com>
+Date: Thu, 15 Oct 2026 19:30:41 +0800
+Subject: [PATCH 14/14] feat(shuffle): keep the queue panel and the real
+ playback order in sync
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+播放列表面板里看到的顺序就是实际播放顺序（B站本体/piliplus 的做法）；换歌单或
+切随机时，正在播的那首不会被切掉。改动内容：
+
+- 队列在开播前就排好：随机模式用播放器自带的 smart shuffle 排一次，之后 RJKM 的
+  随机索引跟随队列顺序（shuffleAlongAudioLists），所以"下一首"可预知、无损预取
+  永远猜对、面板顺序也不会和播放顺序打架
+- 每首歌带一个稳定 key（__PLAYER_KEY__）：重排队列时内核能认出"还是这首"
+- 切随机/切回顺序只重排队列（keepCurrentAudioInList）：当前这首继续播，进度不动、
+  不重新加载音频
+- 修掉内核在列表被替换时 updatePlayIndex(0) 与 newAudioListPlayIndex 抢跑，导致
+  playIndex 归零、"下一首"跳到不相干歌曲的问题
+- 内核改动见 patch/rjkm-fork-queue-sync.patch（lovegaoshi/react-music-player）
+
+验证：work/harness 的无头浏览器测试（真浏览器挂载播放内核，16 条断言全绿）。
+---
+ .../PlaylistSetting/usePlaylistSetting.ts     |  10 +-
+ src/hooks/usePlayback.ts                      |  95 +++++++--------
+ src/utils/PlayQueue.ts                        | 111 ++++++++++++++++++
+ 3 files changed, 168 insertions(+), 48 deletions(-)
+ create mode 100644 src/utils/PlayQueue.ts
+
+diff --git a/src/components/Playlist/PlaylistSetting/usePlaylistSetting.ts b/src/components/Playlist/PlaylistSetting/usePlaylistSetting.ts
+index 41adc8e..afec17c 100644
+--- a/src/components/Playlist/PlaylistSetting/usePlaylistSetting.ts
++++ b/src/components/Playlist/PlaylistSetting/usePlaylistSetting.ts
+@@ -1,6 +1,7 @@
+ import usePlaylistSetting from '@APM/hooks/usePlaylistSetting';
+ import useApp from '@stores/useApp';
+ import { NoxRepeatModeToRJKM } from '@utils/RJKMUtils';
++import { resyncQueueOrder } from '@utils/PlayQueue';
+ 
+ export default (playlist: NoxMedia.Playlist) => {
+   const usedPlaylistSetting = usePlaylistSetting(playlist);
+@@ -10,7 +11,14 @@ export default (playlist: NoxMedia.Playlist) => {
+     setting: Partial<NoxMedia.Playlist> = {},
+     callback: (val: NoxMedia.Playlist) => void = () => undefined,
+   ) => {
+-    usedPlaylistSetting.saveSetting(setting, callback);
++    // 播放模式变了：如果把正在播的这张歌单切成/切出随机，
++    // 顺手把播放队列也重排成对应的顺序（当前这首继续播，不中断）
++    const repeatModeChanged =
++      usedPlaylistSetting.repeatMode !== playlist.repeatMode;
++    usedPlaylistSetting.saveSetting(setting, (val) => {
++      callback(val);
++      if (repeatModeChanged) resyncQueueOrder(val);
++    });
+     /**
+      * 
+   order: 'order',
+diff --git a/src/hooks/usePlayback.ts b/src/hooks/usePlayback.ts
+index 62a709e..90acaf3 100644
+--- a/src/hooks/usePlayback.ts
++++ b/src/hooks/usePlayback.ts
+@@ -8,8 +8,13 @@ import renderExtendsContent from '@components/App/ExtendContent';
+ import { Source } from '@APM/enums/MediaFetch';
+ import { DEFAULT_NULL_URL } from '@objects/Song';
+ import { MUSICFREE } from '@utils/mediafetch/musicfree';
+-import { NoxRepeatModeToRJKM } from '@utils/RJKMUtils';
+-import { NoxRepeatMode } from '@enums/RepeatMode';
++import {
++  queueForPlaylist,
++  resyncQueueOrder,
++  rjkmPlayModeFor,
++  usesPredictableShuffle,
++  withPlayerKeys,
++} from '@utils/PlayQueue';
+ import loudness from '@utils/audio/loudness/normalizeClient';
+ import {
+   hostOf,
+@@ -34,40 +39,6 @@ const SkipLoudnessSource: (Source | undefined | MUSICFREE)[] = [
+   Source.biliLive,
+ ];
+ 
+-/** Fisher–Yates; returns a new array so callers can keep the original order */
+-const shuffled = <T>(items: T[]): T[] => {
+-  const out = [...items];
+-  for (let i = out.length - 1; i > 0; i -= 1) {
+-    const j = Math.floor(Math.random() * (i + 1));
+-    const tmp = out[i];
+-    out[i] = out[j];
+-    out[j] = tmp;
+-  }
+-  return out;
+-};
+-
+-/**
+- * "随机播放"是否采用**预先排好的随机队列**（B 站本体 / piliplus 的做法）：
+- * 队列顺序固定 → 播放列表里能看到下一首、也能提前测量以免切歌卡顿。
+- * 关掉 `smartShuffle` 时退回 RJKM 的实时随机（顺序不可预知）。
+- */
+-const usesPredictableShuffle = (
+-  playlist: NoxMedia.Playlist,
+-  playerSetting: Partial<NoxStorage.PlayerSettingDict>,
+-) =>
+-  playlist?.repeatMode === NoxRepeatMode.Shuffle &&
+-  playerSetting?.smartShuffle !== false;
+-
+-/** RJKM 的播放模式：可预知随机 = 按排好的队列顺序循环 */
+-const rjkmPlayModeFor = (
+-  playlist: NoxMedia.Playlist,
+-  playerSetting: Partial<NoxStorage.PlayerSettingDict>,
+-  fallback?: string,
+-) =>
+-  usesPredictableShuffle(playlist, playerSetting)
+-    ? 'orderLoop'
+-    : (NoxRepeatModeToRJKM[playlist?.repeatMode] ?? fallback);
+-
+ export default () => {
+   const playerSetting = useNoxSetting((state) => state.playerSetting);
+   const currentPlayingId = useNoxSetting((state) => state.currentPlayingId);
+@@ -390,15 +361,21 @@ export default () => {
+     immediatePlay?: boolean;
+     replaceList?: boolean;
+     newAudioListPlayIndex?: number;
++    /** true = 只把队列换成新顺序，正在播的那首继续播（随机开关切换用） */
++    keepCurrent?: boolean;
++    /** 队列已经是"排好的播放顺序"，RJKM 别再自己随机一遍 */
++    shuffleAlongAudioLists?: boolean;
+   }
+   const updateCurrentAudioList = ({
+     songs,
+     immediatePlay = false,
+     replaceList = false,
+     newAudioListPlayIndex = 0,
++    keepCurrent = false,
++    shuffleAlongAudioLists,
+   }: UpdateCurrentAudioListProps) => {
+     // console.log("updateCurrentAudioList", params)
+-    let newAudioLists = [];
++    let newAudioLists: NoxMedia.Song[] = [];
+     if (immediatePlay) {
+       // Click and play
+       newAudioLists = [...songs, ...playingList];
+@@ -409,12 +386,17 @@ export default () => {
+       // AddToList handle
+       newAudioLists = [...playingList, ...songs];
+     }
++    // 每一项都带上稳定 key（RJKM 用它认出"正在播的那首"）
++    newAudioLists = withPlayerKeys(newAudioLists);
+     const newParam = {
+       ...params,
+       quietUpdate: !immediatePlay,
+       clearPriorAudioLists: immediatePlay || replaceList,
+       audioLists: newAudioLists,
+       newAudioListPlayIndex,
++      keepCurrentAudioInList: keepCurrent,
++      shuffleAlongAudioLists:
++        shuffleAlongAudioLists ?? params?.shuffleAlongAudioLists === true,
+     };
+     // console.log(newParam)
+     setplayingList(newAudioLists);
+@@ -455,13 +437,15 @@ export default () => {
+       playerSetting.loadPlaylistAsArtist,
+     );
+     // 随机模式：先把队列排好，"下一首"从此可预知（播放列表里也能看到顺序）
+-    const queue = usesPredictableShuffle(favList, playerSetting)
+-      ? shuffled(parsedSongList)
+-      : parsedSongList;
++    const queue = queueForPlaylist(favList, parsedSongList, playerSetting);
+     updateCurrentAudioList({
+       songs: queue,
+       replaceList: true,
+-      newAudioListPlayIndex: queue.findIndex((s) => s.id === song.id),
++      newAudioListPlayIndex: Math.max(
++        0,
++        queue.findIndex((s) => s.id === song.id),
++      ),
++      shuffleAlongAudioLists: usesPredictableShuffle(favList, playerSetting),
+     });
+     updatePlaylistRepeatMode(favList);
+   };
+@@ -473,23 +457,32 @@ export default () => {
+       playerSetting.loadPlaylistAsArtist,
+     );
+     // 同上：随机模式下先随机好整条队列，再从头（也就是随机的第一首）开始播
+-    const queue = usesPredictableShuffle(favList, playerSetting)
+-      ? shuffled(parsedSongList)
+-      : parsedSongList;
++    const queue = queueForPlaylist(favList, parsedSongList, playerSetting);
+     updateCurrentAudioList({
+       songs: queue,
+       immediatePlay: false,
+       replaceList: true,
+       newAudioListPlayIndex: 0,
++      shuffleAlongAudioLists: usesPredictableShuffle(favList, playerSetting),
+     });
+     updatePlaylistRepeatMode(favList);
+   };
+ 
+   const onPlayModeChange = (playMode: string) => {
+     console.debug('[RJKM] play mode change:', playMode);
++    const playlist = useNoxSetting.getState().currentPlaylist;
++    const wasPredictable = usesPredictableShuffle(playlist, playerSetting);
+     setPlayerSettings({ playMode });
+     params.playMode = playMode;
+     setparams(params);
++    // 在播放器里手动切到/切出随机时，把正在播的这条队列也重排一遍，
++    // 这样播放列表面板里显示的顺序永远等于实际播放顺序
++    if (
++      wasPredictable !==
++      usesPredictableShuffle(playlist, { ...playerSetting, playMode })
++    ) {
++      resyncQueueOrder(playlist);
++    }
+   };
+ 
+   const onAudioVolumeChange = (currentVolume: number) => {
+@@ -582,6 +575,9 @@ export default () => {
+     const song = songList[previousPlayingSongIndex];
+     options.extendsContent =
+       song !== undefined ? renderExtendsContent(song) : [];
++    // 队列开播前就排好（随机模式 = 预排好的随机顺序），
++    // 面板里看到的顺序就是播放顺序，下一首也能提前测好响度
++    const queue = queueForPlaylist(playlist, songList, playerSetting);
+     const newParams = {
+       ...options,
+       ...playerSetting,
+@@ -591,11 +587,16 @@ export default () => {
+         playerSetting,
+         playerSetting.playMode,
+       ),
+-      audioLists: songList,
+-      defaultPlayIndex: previousPlayingSongIndex,
++      audioLists: queue,
++      defaultPlayIndex: Math.max(
++        0,
++        queue.findIndex((s) => s.id === currentPlayingId),
++      ),
++      shuffleAlongAudioLists: usesPredictableShuffle(playlist, playerSetting),
++      keepCurrentAudioInList: false,
+     };
+     setparams(newParams);
+-    setplayingList(songList);
++    setplayingList(queue);
+   };
+ 
+   const handleSearch = (list: NoxMedia.Playlist) => {
+diff --git a/src/utils/PlayQueue.ts b/src/utils/PlayQueue.ts
+new file mode 100644
+index 0000000..cb9b70d
+--- /dev/null
++++ b/src/utils/PlayQueue.ts
+@@ -0,0 +1,111 @@
++import APMshuffle from '@APM/utils/shuffle';
++import { useNoxSetting } from '@APM/stores/useApp';
++import { NoxRepeatModeToRJKM } from '@utils/RJKMUtils';
++import useApp from '@stores/useApp';
++
++/**
++ * react-jinke-music-player 用这个字段认"这首歌"（fork 的 config/player.js）。
++ * 我们自己给队列里的每一项都写上它，且**同一首歌每次都是同一个值**：
++ * 重排队列时 playId 才能对上，"当前播放的那首"不会被认错、也不会被打断。
++ */
++export const PLAY_QUEUE_KEY = '__PLAYER_KEY__';
++
++export const SHUFFLE_PLAY_MODE = 'shufflePlay';
++
++/** 队列项（Song 上多挂一个 RJKM 的 player key） */
++export type PlayQueueSong = NoxMedia.Song & { [PLAY_QUEUE_KEY]?: string };
++
++/** 给队列里的每首歌挂上稳定 key */
++export const withPlayerKeys = (songs: NoxMedia.Song[]): NoxMedia.Song[] =>
++  songs.map(
++    (song) =>
++      ({
++        ...song,
++        [PLAY_QUEUE_KEY]: `${song.bvid}-${song.id}`,
++      } as PlayQueueSong),
++  );
++
++/** RJKM 的 playMode：歌单自己的播放模式优先，其次才是播放器设置 */
++export const rjkmPlayModeFor = (
++  playlist?: NoxMedia.Playlist,
++  playerSetting?: Partial<NoxStorage.PlayerSettingDict>,
++  fallback?: string,
++) =>
++  playlist?.repeatMode !== undefined
++    ? NoxRepeatModeToRJKM[playlist.repeatMode]
++    : playerSetting?.playMode ?? fallback;
++
++/**
++ * 现在是不是"可预知的随机播放"：**随机时队列在开播前就排好**（B站本体/piliplus 的做法），
++ * 于是播放列表面板里看到的顺序就是实际播放顺序，下一首也能提前测量响度。
++ *
++ * 关掉设置里的 `smartShuffle` 时不做这件事，退回 RJKM 自己的实时随机。
++ */
++export const usesPredictableShuffle = (
++  playlist?: NoxMedia.Playlist,
++  playerSetting?: Partial<NoxStorage.PlayerSettingDict>,
++) =>
++  rjkmPlayModeFor(playlist, playerSetting) === SHUFFLE_PLAY_MODE &&
++  playerSetting?.smartShuffle !== false;
++
++/**
++ * 把一张歌单排成播放队列：随机模式下就是"预排好的随机顺序"，
++ * 用的还是播放器自带的 smart shuffle 算法（尽量不让同一首歌连着出现）。
++ */
++export const queueForPlaylist = (
++  playlist: NoxMedia.Playlist,
++  songList: NoxMedia.Song[],
++  playerSetting?: Partial<NoxStorage.PlayerSettingDict>,
++): NoxMedia.Song[] => {
++  const shuffle = APMshuffle(playerSetting?.smartShuffle !== false);
++  return withPlayerKeys(
++    usesPredictableShuffle(playlist, playerSetting)
++      ? shuffle(songList)
++      : songList,
++  );
++};
++
++/** 队列里的歌和歌单里的歌是不是同一批（不看顺序） */
++const sameSongs = (queue: NoxMedia.Song[], songList: NoxMedia.Song[]) =>
++  queue.length === songList.length &&
++  songList.every((song) => queue.some((q) => q.id === song.id));
++
++/**
++ * 随机开关被切换后，把**正在播的这条队列**换成新的顺序：
++ * 开随机 → 预排好的随机顺序；关随机 → 歌单原本的顺序。
++ *
++ * 只是换顺序：正在播的那首继续播（RJKM 侧走 keepCurrentAudioInList），
++ * 不会被切掉，也不会从头开始。
++ */
++export const resyncQueueOrder = (playlist?: NoxMedia.Playlist) => {
++  if (!playlist?.songList?.length) return;
++  const { playingList: queue, params } = useApp.getState();
++  if (!queue.length || !params?.audioLists?.length) return;
++  if (!sameSongs(queue, playlist.songList)) return;
++
++  const playerSetting = useNoxSetting.getState().playerSetting;
++  const predictable = usesPredictableShuffle(playlist, playerSetting);
++  const ordered = predictable
++    ? APMshuffle(playerSetting?.smartShuffle !== false)(playlist.songList)
++    : playlist.songList;
++  // 复用队列里已有的对象（带稳定 key），只换顺序
++  const songs = ordered.map(
++    (song) => queue.find((q) => q.id === song.id) ?? song,
++  );
++
++  const currentPlayingId = useNoxSetting.getState().currentPlayingId;
++  const index = songs.findIndex((song) => song.id === currentPlayingId);
++  useApp.getState().setparams({
++    ...params,
++    quietUpdate: true,
++    clearPriorAudioLists: true,
++    audioLists: songs,
++    newAudioListPlayIndex: index === -1 ? 0 : index,
++    // 队列已经是"播放顺序"了，RJKM 别再自己随机一遍
++    shuffleAlongAudioLists: predictable,
++    // 只重排：当前这首不要被切掉
++    keepCurrentAudioInList: index !== -1,
++  });
++};
++
++export default {};
 -- 
 2.53.0.windows.3
 

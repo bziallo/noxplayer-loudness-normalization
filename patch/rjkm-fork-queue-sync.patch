@@ -1,0 +1,205 @@
+diff --git a/src/index.js b/src/index.js
+index bd3679d..9aaa04b 100644
+--- a/src/index.js
++++ b/src/index.js
+@@ -102,6 +102,17 @@ function shuffleArray(arr) {
+ export default class ReactJkMusicPlayer extends PureComponent {
+   isDrag = false
+ 
++  /**
++   * "随机播放"的索引表。
++   * 宿主（电闹）如果自己把队列**预先随机**好了（shuffleAlongAudioLists=true），
++   * 这里就按队列原顺序走：播放列表面板里显示的顺序 = 实际播放顺序，
++   * 下一首也能提前测量（切歌不跳音量）。
++   */
++  shuffleIndices = (length, alongAudioLists = this.props.shuffleAlongAudioLists) =>
++    alongAudioLists
++      ? Array.from(Array(length), (x, i) => i)
++      : shuffleArray(Array.from(Array(length), (x, i) => i))
++
+   initPlayId = '' // 初始播放id
+ 
+   state = {
+@@ -256,9 +267,7 @@ export default class ReactJkMusicPlayer extends PureComponent {
+ 
+     this.player = createRef()
+     this.destroyBtn = createRef()
+-    this.shuffledAudioListIndex = shuffleArray(
+-      Array.from(Array(props.audioLists.length), (x, i) => i),
+-    )
++    this.shuffledAudioListIndex = this.shuffleIndices(props.audioLists.length)
+     this.audioListRef = React.createRef()
+   }
+ 
+@@ -1017,9 +1026,7 @@ export default class ReactJkMusicPlayer extends PureComponent {
+         this.getBaseAudioInfo(),
+       )
+ 
+-    this.shuffledAudioListIndex = shuffleArray(
+-      Array.from(Array(newAudioLists.length), (x, i) => i),
+-    )
++    this.shuffledAudioListIndex = this.shuffleIndices(newAudioLists.length)
+   }
+ 
+   openAudioListsPanel = () => {
+@@ -1972,12 +1979,16 @@ export default class ReactJkMusicPlayer extends PureComponent {
+   getPlayInfoOfNewList = (nextProps) => {
+     const { audioLists = [], newAudioListPlayIndex = 0 } = nextProps
+     const _audioLists = audioLists.map((info) => {
++      // 宿主自带的稳定 key（同一首歌重排前后 key 不变）优先沿用：
++      // 这样重排队列时 playId 还对得上，拖动/重排后"当前这首"不会被认错
+       const prevAudioBeforeUpdate =
+-        (nextProps.quietUpdate &&
+-          this.state.audioLists.find(
+-            ({ musicSrc }) => musicSrc === info.musicSrc,
+-          )) ||
+-        {}
++        info[PLAYER_KEY] !== undefined
++          ? info
++          : (nextProps.quietUpdate &&
++              this.state.audioLists.find(
++                ({ musicSrc }) => musicSrc === info.musicSrc,
++              )) ||
++            {}
+       return {
+         ...info,
+         [PLAYER_KEY]: prevAudioBeforeUpdate[PLAYER_KEY] || uuId(),
+@@ -2121,7 +2132,7 @@ export default class ReactJkMusicPlayer extends PureComponent {
+     }
+   }
+ 
+-  updateAudioLists = (audioLists) => {
++  updateAudioLists = (audioLists, alongAudioLists) => {
+     const newAudioLists = [
+       ...this.state.audioLists,
+       ...audioLists.filter(
+@@ -2140,8 +2151,9 @@ export default class ReactJkMusicPlayer extends PureComponent {
+         this.getBaseAudioInfo(),
+       )
+ 
+-    this.shuffledAudioListIndex = shuffleArray(
+-      Array.from(Array(audioLists.length), (x, i) => i),
++    this.shuffledAudioListIndex = this.shuffleIndices(
++      audioLists.length,
++      alongAudioLists,
+     )
+     console.debug(
+       'updateAudioLists: shuffled AudioList indices is updated to a new length of ',
+@@ -2149,7 +2161,13 @@ export default class ReactJkMusicPlayer extends PureComponent {
+     )
+   }
+ 
+-  loadNewAudioLists = (nextProps) => {
++  /**
++   * 把 `nextProps.audioLists` 变成播放器自己的列表。
++   *
++   * `keepCurrentAudio=true` 时表示"只是换了个顺序"（宿主事先排好的随机队列、
++   * 或恢复歌单原顺序）：当前这首歌继续播，进度、音量、musicSrc 一律不动。
++   */
++  loadNewAudioLists = (nextProps, keepCurrentAudio = false) => {
+     const {
+       audioLists,
+       remember,
+@@ -2163,11 +2181,27 @@ export default class ReactJkMusicPlayer extends PureComponent {
+       return
+     }
+     const info = this.getPlayInfoOfNewList(nextProps)
++    if (keepCurrentAudio) {
++      // 只换顺序：列表换成新顺序，当前这首歌（playId）继续播，
++      // 不重新解析 musicSrc，所以不会重新加载、不会从 0 开始
++      const keepIndex = info.audioLists.findIndex(
++        (audio) => audio[PLAYER_KEY] === info.playId,
++      )
++      this.setState({
++        audioLists: info.audioLists,
++        playId: info.playId,
++        playIndex: keepIndex === -1 ? this.state.playIndex : keepIndex,
++      })
++      return
++    }
+     const lastPlayStatus = remember
+       ? this.getLastPlayStatus()
+       : {
+           playMode: playMode || PLAY_MODE.order,
+-          playIndex: playIndex || DEFAULT_PLAY_INDEX,
++          // 新列表的播放目标（newAudioListPlayIndex）就是"该播哪首"，
++          // 没有它才退回 DEFAULT_PLAY_INDEX
++          playIndex:
++            playIndex ?? newAudioListPlayIndex ?? DEFAULT_PLAY_INDEX,
+         }
+ 
+     if (theme !== THEME.AUTO) {
+@@ -2212,12 +2246,20 @@ export default class ReactJkMusicPlayer extends PureComponent {
+     })
+   }
+ 
+-  changeAudioLists = (nextProps) => {
+-    if (!this.checkCurrentPlayingAudioIsInUpdatedAudioLists(nextProps)) {
++  changeAudioLists = (nextProps, keepCurrentAudio = false) => {
++    if (
++      !keepCurrentAudio &&
++      !this.checkCurrentPlayingAudioIsInUpdatedAudioLists(nextProps)
++    ) {
+       this.resetAudioStatus()
+     }
+-    this.resetPlayId().then(() => {
+-      this.loadNewAudioLists(nextProps)
++    // keepCurrentAudio 时不能重置 playId：playId 一空，
++    // loadNewAudioLists 就会把"当前这首"当成新歌重新加载（进度清零）
++    const ready = keepCurrentAudio
++      ? new Promise((res) => this.setState({}, res))
++      : this.resetPlayId()
++    ready.then(() => {
++      this.loadNewAudioLists(nextProps, keepCurrentAudio)
+       this.props.onAudioListsChange &&
+         this.props.onAudioListsChange(
+           this.state.playId,
+@@ -2225,8 +2267,9 @@ export default class ReactJkMusicPlayer extends PureComponent {
+           this.getBaseAudioInfo(),
+         )
+     })
+-    this.shuffledAudioListIndex = shuffleArray(
+-      Array.from(Array(nextProps.audioLists.length), (x, i) => i),
++    this.shuffledAudioListIndex = this.shuffleIndices(
++      nextProps.audioLists.length,
++      nextProps.shuffleAlongAudioLists,
+     )
+     console.debug(
+       'changeAudioLists: shuffled AudioList indices is updated to a new length of ',
+@@ -2511,22 +2554,29 @@ export default class ReactJkMusicPlayer extends PureComponent {
+       clearPriorAudioLists,
+     } = nextProps
+     const isEqualAudioLists = arrayEqual(audioLists)(this.props.audioLists)
++    // 宿主明确说"只重排、别动当前这首"（keepCurrentAudioInList），
++    // 且当前这首歌确实还在新列表里 → 不要当换歌处理（否则进度会被清零）
++    const keepCurrentAudio =
++      !isEqualAudioLists &&
++      !!clearPriorAudioLists &&
++      nextProps.keepCurrentAudioInList === true &&
++      this.checkCurrentPlayingAudioIsInUpdatedAudioLists(nextProps)
+     if (!isEqualAudioLists) {
+       if (clearPriorAudioLists) {
+-        this.changeAudioLists(nextProps)
++        this.changeAudioLists(nextProps, keepCurrentAudio)
+       } else {
+-        this.updateAudioLists(audioLists)
++        this.updateAudioLists(audioLists, nextProps.shuffleAlongAudioLists)
+       }
+       if (!this.checkCurrentPlayingAudioIsInUpdatedAudioLists(nextProps)) {
+         this.initPlayer(audioLists, false, false)
+       }
+       setTimeout(() => this.initSortableAudioLists(), 200)
+     }
+-    this.updatePlayIndex(
+-      !isEqualAudioLists && clearPriorAudioLists
+-        ? DEFAULT_PLAY_INDEX
+-        : playIndex,
+-    )
++    // 整个列表被替换时（换歌单/重排序），播哪一首由 changeAudioLists →
++    // loadNewAudioLists(newAudioListPlayIndex) 决定；这里的 updatePlayIndex(0)
++    // 会和它抢，把 playIndex 拍回 0（导致"下一首"跳到不相干的歌）
++    const listReplaced = !isEqualAudioLists && !!clearPriorAudioLists
++    this.updatePlayIndex(listReplaced ? undefined : playIndex)
+     this.updateTheme(theme)
+     this.updateMode(mode)
+     this.updatePlayMode(playMode)
