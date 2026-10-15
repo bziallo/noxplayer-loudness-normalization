@@ -1150,10 +1150,10 @@ index 0000000..504f7d8
 +}
 diff --git a/src/components/setting/LoudnessSetting.tsx b/src/components/setting/LoudnessSetting.tsx
 new file mode 100644
-index 0000000..80f619c
+index 0000000..795d0df
 --- /dev/null
 +++ b/src/components/setting/LoudnessSetting.tsx
-@@ -0,0 +1,297 @@
+@@ -0,0 +1,275 @@
 +/* ================================================================
 + * LoudnessSetting.tsx — settings panel for whole-track loudness normalization.
 + *
@@ -1217,12 +1217,9 @@ index 0000000..80f619c
 +
 +const NORMALIZE_HELP =
 +  '先量完整首/整段的集成响度，再对这一个视频施加一个常数增益；' +
-+  '不做实时压缩，动态范围原样保留。首次播放要等一小会儿，之后走缓存。';
-+
-+const PREMEASURE_HELP =
-+  '开启后换歌时"先测好、再开播"：这首的响度测量完成、固定增益已经落位，播放器才开始出声，' +
-+  '所以开头不会再出现音量突然变大/变小。代价是没缓存过的歌会多等约 0.5–2 秒；' +
-+  '缓存命中或提前预取过的歌是瞬时的。关闭后回到"先播原声、测完再平滑落位"的行为。';
++  '不做实时压缩，动态范围原样保留。' +
++  '换歌时会先测好这一首并把增益落位再开播，同时预取下一首，' +
++  '所以开头不会出现音量变化、切歌也是无缝的。';
 +
 +export default function LoudnessSetting() {
 +  const playerSetting = useNoxSetting((state) => state.playerSetting);
@@ -1272,25 +1269,6 @@ index 0000000..80f619c
 +          label={
 +            <span style={LABEL_STYLE}>
 +              响度归一（整段测量 + 固定增益）
-+              <InfoOutlinedIcon sx={INFO_ICON_SX} />
-+            </span>
-+          }
-+        />
-+      </Tooltip>
-+
-+      <Tooltip title={PREMEASURE_HELP} placement='right' arrow enterDelay={300}>
-+        <FormControlLabel
-+          control={
-+            <Checkbox
-+              checked={playerSetting.loudnessPreMeasure !== false}
-+              onChange={(e) =>
-+                setPlayerSetting({ loudnessPreMeasure: e.target.checked })
-+              }
-+            />
-+          }
-+          label={
-+            <span style={LABEL_STYLE}>
-+              播放前先测好（避免开头音量突变）
 +              <InfoOutlinedIcon sx={INFO_ICON_SX} />
 +            </span>
 +          }
@@ -1510,7 +1488,7 @@ index ebaba7b..dd3dc1b 100644
          settingKey='memoryEfficiency'
          callback={globalThis.location.reload}
 diff --git a/src/hooks/usePlayback.ts b/src/hooks/usePlayback.ts
-index f955321..bca8886 100644
+index f955321..c1d0e3d 100644
 --- a/src/hooks/usePlayback.ts
 +++ b/src/hooks/usePlayback.ts
 @@ -1,4 +1,4 @@
@@ -1559,7 +1537,7 @@ index f955321..bca8886 100644
      ) {
        return;
      }
-@@ -65,17 +80,254 @@ export default () => {
+@@ -65,17 +80,264 @@ export default () => {
      }, 500);
    };
  
@@ -1751,14 +1729,23 @@ index f955321..bca8886 100644
 +    const playerSettingNow = useNoxSetting.getState().playerSetting;
 +    if (
 +      playerSettingNow.loudnessNormalize !== true ||
-+      playerSettingNow.loudnessPrefetchNext === false ||
-+      playerSettingNow.playMode === 'shufflePlay'
++      playerSettingNow.loudnessPrefetchNext === false
 +    ) {
 +      return;
 +    }
++    const { playMode } = playerSettingNow;
++    // 单曲循环永远播同一首（已在缓存里）；随机播放的"下一首"此刻还没定，
++    // 那时由播放前的即时测量兜底（见 prepareBeforePlay）
++    if (playMode === 'singleLoop' || playMode === 'shufflePlay') return;
++
 +    const { playingList: list } = useApp.getState();
 +    const index = list.findIndex((s) => s.id === song.id);
-+    const next = index >= 0 ? list[index + 1] : undefined;
++    // 列表播完会回到第一首（orderLoop），提前把第一首也热好
++    const next =
++      index >= 0
++        ? (list[index + 1] ??
++          (playMode === 'orderLoop' && list.length > 1 ? list[0] : undefined))
++        : undefined;
 +    if (
 +      !next ||
 +      !next.id ||
@@ -1781,7 +1768,8 @@ index f955321..bca8886 100644
 +          playerSetting: playerSettingNow,
 +        })
 +        .catch(() => undefined);
-+    }, 3000);
++      // 上一首已经出声了才开始测，避免和首包抢带宽
++    }, 1500);
 +  };
 +
    const musicSrcParser = async (v: NoxMedia.Song) => {
@@ -1817,7 +1805,7 @@ index f955321..bca8886 100644
      } catch (e) {
        console.error(`[resolveURL] failed to resolve ${v.bvid}: ${e}`);
        setTimeout(() => currentAudioInst?.playNext?.(), 1000);
-@@ -186,6 +438,8 @@ export default () => {
+@@ -186,6 +448,8 @@ export default () => {
  
    const onAudioVolumeChange = (currentVolume: number) => {
      // console.log('[RJKM] audio volume change', currentVolume)
@@ -1826,7 +1814,7 @@ index f955321..bca8886 100644
      setPlayerSettings({ defaultVolume: Math.sqrt(currentVolume) });
    };
  
-@@ -242,6 +496,7 @@ export default () => {
+@@ -242,6 +506,7 @@ export default () => {
      setCurrentAudio(audioInfo);
      setCurrentPlayingId(audioInfo.id);
      sendBiliHeartbeat(audioInfo);
@@ -1834,7 +1822,7 @@ index f955321..bca8886 100644
    };
  
    const onAudioError = (
-@@ -250,12 +505,13 @@ export default () => {
+@@ -250,12 +515,13 @@ export default () => {
      _audioLists: NoxMedia.Song[],
      audioInfo: NoxMedia.Song,
    ) => {
